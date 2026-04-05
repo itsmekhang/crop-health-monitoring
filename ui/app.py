@@ -17,15 +17,18 @@ YIELD_MODEL   = Path("results/yield_model.pkl")
 # Expected CSV columns
 REQUIRED_COLS = {"average_rain_fall_mm_per_year", "pesticides_tonnes", "avg_temp", "Item", "Area", "Year"}
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 @st.cache_resource
 def load_disease_model():
     if not DISEASE_MODEL.exists():
         return None, None
-    from src.disease_classifier import build_model, DEVICE
+    from src.disease_classifier import build_model
     checkpoint = torch.load(DISEASE_MODEL, map_location=DEVICE, weights_only=False)
     classes = checkpoint["classes"]
     model = build_model(num_classes=len(classes))
     model.load_state_dict(checkpoint["model_state"])
+    model.to(DEVICE)
     model.eval()
     return model, classes
 
@@ -119,9 +122,9 @@ if run:
                     transforms.ToTensor(),
                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
                 ])
-                tensor = transform(img).unsqueeze(0)
+                tensor = transform(img).unsqueeze(0).to(DEVICE)
                 with torch.no_grad():
-                    probs = torch.softmax(disease_model(tensor), dim=1)[0].numpy()
+                    probs = torch.softmax(disease_model(tensor), dim=1)[0].cpu().numpy()
 
                 top5_idx  = probs.argsort()[::-1][:5]
                 top5_cls  = [classes[i].replace("_", " ") for i in top5_idx]
