@@ -1,6 +1,7 @@
 """
-Crop yield prediction using Random Forest and XGBoost.
-Dataset: Kaggle Crop Yield dataset (temperature, rainfall, region, year)
+Crop yield prediction using XGBoost.
+Dataset: Agri_yield_prediction.csv
+Features: weather (from UI sliders) + soil/crop data (from farmer CSV)
 """
 
 import numpy as np
@@ -13,31 +14,43 @@ from sklearn.preprocessing import LabelEncoder
 import xgboost as xgb
 import pickle
 
+# Features used for prediction
+# Weather features come from the UI sliders; soil/crop features from the farmer CSV
+NUMERIC_FEATURES = [
+    "Temperature", "Humidity", "Rainfall",
+    "pH", "N", "P", "K",
+    "Irrigation_Frequency",
+]
+CATEGORICAL_FEATURES = ["Crop_Type", "Soil_Type", "Fertilizer_Type", "Pesticide_Usage"]
+ALL_FEATURES = NUMERIC_FEATURES + [f"{c}_enc" for c in CATEGORICAL_FEATURES]
+TARGET = "Yield"
 
-FEATURES = ["Area", "Item", "Year", "average_rain_fall_mm_per_year", "pesticides_tonnes", "avg_temp"]
-TARGET = "hg/ha_yield"
 
-
-def load_data(csv_path: str) -> pd.DataFrame:
+def load_data(csv_path: str):
     df = pd.read_csv(csv_path)
-    df = df[FEATURES + [TARGET]].dropna()
+    df = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES + [TARGET]].dropna()
 
-    le = LabelEncoder()
-    df["Area"] = le.fit_transform(df["Area"])
-    df["Item"] = le.fit_transform(df["Item"])
+    encoders = {}
+    for col in CATEGORICAL_FEATURES:
+        le = LabelEncoder()
+        df[f"{col}_enc"] = le.fit_transform(df[col].astype(str))
+        encoders[col] = le
 
-    return df
+    return df, encoders
 
 
-def train(csv_path: str, model_type: str = "xgboost", save_path: str = "results/yield_model.pkl"):
-    df = load_data(csv_path)
-    X = df[FEATURES]
+def train(csv_path: str = "data/raw/Agri_yield_prediction.csv",
+          model_type: str = "xgboost",
+          save_path: str = "results/yield_model.pkl"):
+    df, encoders = load_data(csv_path)
+    X = df[ALL_FEATURES]
     y = df[TARGET]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     if model_type == "xgboost":
-        model = xgb.XGBRegressor(n_estimators=200, learning_rate=0.05, max_depth=6, random_state=42)
+        model = xgb.XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=6,
+                                  subsample=0.8, colsample_bytree=0.8, random_state=42)
     else:
         model = RandomForestRegressor(n_estimators=200, random_state=42)
 
@@ -46,26 +59,27 @@ def train(csv_path: str, model_type: str = "xgboost", save_path: str = "results/
 
     mae = mean_absolute_error(y_test, preds)
     r2 = r2_score(y_test, preds)
-    print(f"MAE: {mae:.2f} | R²: {r2:.4f}")
+    print(f"MAE: {mae:.4f} t/ha | R²: {r2:.4f}")
 
+    bundle = {"model": model, "encoders": encoders, "features": ALL_FEATURES}
     with open(save_path, "wb") as f:
-        pickle.dump(model, f)
+        pickle.dump(bundle, f)
     print(f"Model saved to {save_path}")
 
-    _plot_feature_importance(model, X_train.columns)
-    return model
+    _plot_feature_importance(model, ALL_FEATURES)
+    return bundle
 
 
 def _plot_feature_importance(model, feature_names):
     if hasattr(model, "feature_importances_"):
-        plt.figure(figsize=(8, 4))
+        plt.figure(figsize=(8, 5))
         plt.barh(feature_names, model.feature_importances_)
         plt.xlabel("Importance")
-        plt.title("Feature Importance")
+        plt.title("Feature Importance — Yield Model")
         plt.tight_layout()
         plt.savefig("results/feature_importance.png")
         plt.close()
 
 
 if __name__ == "__main__":
-    train(csv_path="data/raw/yield_df.csv", model_type="xgboost")
+    train(csv_path="data/raw/Agri_yield_prediction.csv", model_type="xgboost")

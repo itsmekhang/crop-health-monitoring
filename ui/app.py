@@ -23,7 +23,8 @@ DISEASE_MODEL = Path("results/disease_model.pth")
 YIELD_MODEL   = Path("results/yield_model.pkl")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-REQUIRED_CSV_COLS = {"Area", "Item", "Year", "average_rain_fall_mm_per_year", "pesticides_tonnes", "avg_temp"}
+REQUIRED_CSV_COLS = {"Crop_Type", "Soil_Type", "pH", "N", "P", "K",
+                     "Irrigation_Frequency", "Fertilizer_Type", "Pesticide_Usage"}
 
 # Yield penalty per severity (how much disease reduces expected yield)
 YIELD_PENALTY = {"None": 0.0, "Moderate": 0.20, "High": 0.35, "Critical": 0.60}
@@ -64,26 +65,30 @@ def predict_disease(model, classes, img: Image.Image):
     return [classes[i] for i in top_idx], [float(probs[i]) for i in top_idx]
 
 
-def predict_yield(bundle, row):
-    model   = bundle["model"]
-    le_area = bundle["le_area"]
-    le_item = bundle["le_item"]
-    try:
-        area_enc = le_area.transform([row["Area"]])[0]
-    except ValueError:
-        area_enc = 0
-    try:
-        item_enc = le_item.transform([row["Item"]])[0]
-    except ValueError:
-        item_enc = 0
-    X = pd.DataFrame([{
-        "Area_enc": area_enc,
-        "Item_enc": item_enc,
-        "Year": row["Year"],
-        "average_rain_fall_mm_per_year": row["average_rain_fall_mm_per_year"],
-        "pesticides_tonnes": row["pesticides_tonnes"],
-        "avg_temp": row["avg_temp"],
-    }])
+def predict_yield(bundle, row, temp, humidity, rainfall):
+    model    = bundle["model"]
+    encoders = bundle["encoders"]
+    features = bundle["features"]
+
+    record = {
+        "Temperature": temp,
+        "Humidity": humidity,
+        "Rainfall": rainfall,
+        "pH": row.get("pH", 6.5),
+        "N": row.get("N", 100.0),
+        "P": row.get("P", 50.0),
+        "K": row.get("K", 150.0),
+        "Irrigation_Frequency": row.get("Irrigation_Frequency", 5),
+    }
+    for col in ["Crop_Type", "Soil_Type", "Fertilizer_Type", "Pesticide_Usage"]:
+        le = encoders.get(col)
+        val = str(row.get(col, ""))
+        try:
+            record[f"{col}_enc"] = le.transform([val])[0]
+        except (ValueError, AttributeError):
+            record[f"{col}_enc"] = 0
+
+    X = pd.DataFrame([record])[features]
     return float(model.predict(X)[0])
 
 
@@ -124,10 +129,15 @@ with col3:
     st.caption("Your field records — used for yield prediction.")
 
     sample_csv = pd.DataFrame([{
-        "Area": "USA", "Item": "Maize", "Year": 2024,
-        "average_rain_fall_mm_per_year": 1270.0,
-        "pesticides_tonnes": 45000.0,
-        "avg_temp": 22.2,
+        "Crop_Type": "Maize",
+        "Soil_Type": "Loamy",
+        "pH": 6.5,
+        "N": 120.0,
+        "P": 60.0,
+        "K": 180.0,
+        "Irrigation_Frequency": 5,
+        "Fertilizer_Type": "Chemical",
+        "Pesticide_Usage": "Low",
     }])
     st.download_button("Download CSV Template", sample_csv.to_csv(index=False),
                        "field_data_template.csv", "text/csv")
@@ -172,7 +182,9 @@ for i, f in enumerate(uploaded_files):
     if field_df is not None:
         csv_row = field_df.iloc[i] if i < len(field_df) else field_df.iloc[0]
         if yield_bundle:
-            baseline_yield  = predict_yield(yield_bundle, csv_row)
+            # days_since_rain → approximate mm by scaling (0d=200mm, 30d=0mm)
+            approx_rainfall = max(0, 200 - days_since_rain * 6.5)
+            baseline_yield  = predict_yield(yield_bundle, csv_row, temp, humidity, approx_rainfall)
             penalty         = YIELD_PENALTY.get(severity, 0.2)
             adjusted_yield  = baseline_yield * (1 - penalty)
 
@@ -260,12 +272,11 @@ for r in results:
                 penalty_pct = YIELD_PENALTY.get(r["severity"], 0) * 100
                 st.metric(
                     "Baseline Yield",
-                    f"{r['baseline_yield']:,.0f} hg/ha",
-                    f"≈ {r['baseline_yield']/10000:.2f} t/ha"
+                    f"{r['baseline_yield']:.2f} t/ha",
                 )
                 st.metric(
                     "Est. Yield with Disease",
-                    f"{r['adjusted_yield']:,.0f} hg/ha",
+                    f"{r['adjusted_yield']:.2f} t/ha",
                     f"-{penalty_pct:.0f}% from disease",
                     delta_color="inverse",
                 )
