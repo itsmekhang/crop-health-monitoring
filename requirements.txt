@@ -1,4 +1,5 @@
 numpy
+requests
 pandas
 matplotlib
 scikit-learn

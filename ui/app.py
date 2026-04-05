@@ -1,6 +1,6 @@
 """
 Streamlit dashboard — Multimodal Crop Health Monitor
-Inputs: leaf images + field conditions sliders + field size / price
+Inputs: leaf images + live weather (Open-Meteo) + field size / price
 Output: disease diagnosis + environmental risk + estimated revenue loss
 """
 
@@ -17,32 +17,45 @@ sys.path.append(str(Path(__file__).parent.parent))
 from src.recommendations import RECOMMENDATIONS, SEVERITY_COLOR
 from src.fusion import assess_risk
 from src.multimodal_model import MultimodalCropNet
+from src.weather import geocode, fetch_weather
 
 DISEASE_MODEL = Path("results/disease_model.pth")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Typical yields (kg/ha) based on global averages for crops the model covers
 TYPICAL_YIELD_KG_HA = {"Tomato": 40_000, "Potato": 20_000, "Pepper": 15_000}
-DEFAULT_PRICE_PER_KG = {"Tomato": 0.50, "Potato": 0.25, "Pepper": 1.20}
+YIELD_PENALTY       = {"None": 0.0, "Moderate": 0.20, "High": 0.35, "Critical": 0.60}
 
-# Disease severity → fraction of yield lost
-YIELD_PENALTY = {"None": 0.0, "Moderate": 0.20, "High": 0.35, "Critical": 0.60}
+# Maps new dataset class names → keys used in RECOMMENDATIONS / fusion.py
+CLASS_NAME_MAP = {
+    "Tomato___Bacterial_spot":                          "Tomato_Bacterial_spot",
+    "Tomato___Early_blight":                            "Tomato_Early_blight",
+    "Tomato___Late_blight":                             "Tomato_Late_blight",
+    "Tomato___Leaf_Mold":                               "Tomato_Leaf_Mold",
+    "Tomato___Septoria_leaf_spot":                      "Tomato_Septoria_leaf_spot",
+    "Tomato___Spider_mites Two-spotted_spider_mite":    "Tomato_Spider_mites_Two_spotted_spider_mite",
+    "Tomato___Target_Spot":                             "Tomato__Target_Spot",
+    "Tomato___Tomato_Yellow_Leaf_Curl_Virus":           "Tomato__Tomato_YellowLeaf__Curl_Virus",
+    "Tomato___Tomato_mosaic_virus":                     "Tomato__Tomato_mosaic_virus",
+    "Tomato___healthy":                                 "Tomato_healthy",
+    "Pepper,_bell___Bacterial_spot":                    "Pepper__bell___Bacterial_spot",
+    "Pepper,_bell___healthy":                           "Pepper__bell___healthy",
+}
+
+def _normalize_class(label: str) -> str:
+    return CLASS_NAME_MAP.get(label, label)
 
 
 def _crop_family(label: str) -> str:
-    if label.lower().startswith("tomato"):
-        return "Tomato"
-    if label.lower().startswith("potato"):
-        return "Potato"
-    if label.lower().startswith("pepper"):
-        return "Pepper"
-    return "Tomato"  # fallback
+    if label.lower().startswith("tomato"): return "Tomato"
+    if label.lower().startswith("potato"): return "Potato"
+    if label.lower().startswith("pepper"): return "Pepper"
+    return "Tomato"
 
 
 @st.cache_resource
 def load_disease_model():
     if not DISEASE_MODEL.exists():
-        return None, None
+        return None, None, None
     checkpoint = torch.load(DISEASE_MODEL, map_location=DEVICE, weights_only=False)
     classes    = checkpoint["classes"]
     model_type = checkpoint.get("model_type", "resnet18")
@@ -92,7 +105,7 @@ def estimate_loss(crop: str, severity: str, field_ha: float, price_per_kg: float
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Crop Health Monitor", page_icon="🌿", layout="wide")
 st.title("Multimodal Crop Health Monitor")
-st.caption("Leaf images + field conditions → disease diagnosis, environmental risk, and estimated revenue loss.")
+st.caption("Leaf images + live weather → disease diagnosis, environmental risk, and estimated revenue loss.")
 
 st.divider()
 
@@ -109,10 +122,30 @@ with col1:
 
 with col2:
     st.subheader("2. Weather Conditions")
-    st.caption("Used to assess how fast disease will spread.")
-    temp            = st.slider("Temperature (°C)", -10, 50, 24)
-    humidity        = st.slider("Humidity (%)", 0, 100, 70)
-    days_since_rain = st.slider("Days since last rainfall", 0, 30, 2)
+    location_input = st.text_input("Location (city or region)", placeholder="e.g. Hanoi, Vietnam")
+
+    temp, humidity, days_since_rain = 24, 70, 2  # silent defaults
+
+    if location_input:
+        geo = geocode(location_input)
+        if geo is None:
+            st.error("Location not found.")
+        else:
+            lat, lon, display_name = geo
+            wx = fetch_weather(lat, lon)
+            if wx is None:
+                st.error("Weather fetch failed.")
+            else:
+                temp            = wx["temperature_c"]
+                humidity        = wx["humidity_pct"]
+                days_since_rain = wx["days_since_rain"]
+                st.caption(f"Live weather · **{display_name}** · via Open-Meteo")
+                c_t, c_h, c_r = st.columns(3)
+                c_t.metric("Temperature", f"{temp}°C")
+                c_h.metric("Humidity", f"{humidity}%")
+                c_r.metric("Days since rain", days_since_rain)
+    else:
+        st.info("Enter a location above to fetch live weather automatically.")
 
     if temp >= 28 and humidity >= 75:
         st.warning("Hot & humid — high fungal risk")
@@ -148,7 +181,8 @@ for f in uploaded_files:
     img = Image.open(f).convert("RGB")
     top_cls, top_conf = predict_disease(disease_model, classes, model_type, img,
                                         temp, humidity, days_since_rain)
-    label, confidence = top_cls[0], top_conf[0]
+    label, confidence = _normalize_class(top_cls[0]), top_conf[0]
+    top_cls = [_normalize_class(c) for c in top_cls]
     rec      = RECOMMENDATIONS.get(label, {})
     severity = rec.get("severity", "Moderate")
     risk     = assess_risk(label, confidence, severity, temp, humidity, days_since_rain)
@@ -202,7 +236,7 @@ for r in results:
     r_color = risk["color"]
 
     with st.expander(f"{r['filename']} — {label} | Risk: {r_level}", expanded=True):
-        col_img, col_diag, col_fuse, col_treat = st.columns([1, 1, 1, 2])
+        col_img, col_diag, col_fuse, col_treat = st.columns([1, 1, 1,2])
 
         with col_img:
             st.image(r["img"], use_container_width=True)
@@ -234,7 +268,6 @@ for r in results:
                 st.caption(risk["env_warning"])
             st.caption(f"Temp {temp}°C · Humidity {humidity}% · {days_since_rain}d dry")
 
-            # Revenue loss estimate
             if "healthy" not in r["label"].lower():
                 st.markdown("---")
                 st.markdown("**Estimated Revenue Loss**")

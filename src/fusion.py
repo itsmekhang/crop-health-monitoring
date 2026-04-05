@@ -68,6 +68,22 @@ RISK_LEVELS = [
 ]
 
 
+import pickle
+from pathlib import Path
+
+_RISK_MODEL = None  # lazy-loaded on first call
+
+def _load_risk_model():
+    global _RISK_MODEL
+    if _RISK_MODEL is not None:
+        return _RISK_MODEL
+    model_path = Path(__file__).parent.parent / "results" / "risk_model.pkl"
+    if model_path.exists():
+        with open(model_path, "rb") as f:
+            _RISK_MODEL = pickle.load(f)
+    return _RISK_MODEL
+
+
 def _scale(value, low, high):
     """Normalize value to [0, 1] clamped between low and high."""
     return max(0.0, min(1.0, (value - low) / (high - low)))
@@ -83,6 +99,7 @@ def _get_disease_type(disease_class):
 def assess_risk(disease_class, confidence, severity, temp, humidity, days_since_rain):
     """
     Combine disease classification + field conditions into a risk score.
+    Uses XGBoost risk model when available, falls back to weighted formula.
 
     Returns:
         dict with risk_score, risk_level, color, action, env_warning, env_multiplier
@@ -97,19 +114,29 @@ def assess_risk(disease_class, confidence, severity, temp, humidity, days_since_
             "env_multiplier": 1.0,
         }
 
-    base = SEVERITY_BASE.get(severity, 0.4)
     dtype, info = _get_disease_type(disease_class)
+    env_warning = info["warning"] if info else None
 
-    if info:
-        env_score = info["risk_fn"](temp, humidity, days_since_rain)
-        env_warning = info["warning"]
-    else:
-        env_score = 0.5
-        env_warning = None
+    # Try XGBoost model first
+    risk_data = _load_risk_model()
+    if risk_data is not None:
+        try:
+            le  = risk_data["label_encoder"]
+            xgb = risk_data["model"]
+            cls_enc = le.transform([disease_class])[0]
+            risk_score = float(xgb.predict([[temp, humidity, days_since_rain,
+                                             confidence, cls_enc]])[0])
+            risk_score = max(0.0, min(1.0, risk_score))
+            env_multiplier = round(float(info["risk_fn"](temp, humidity, days_since_rain)), 2) if info else 0.5
+        except Exception:
+            risk_data = None  # fall through to formula
 
-    # Weighted fusion: disease severity + confidence + environment
-    risk_score = (base * 0.4) + (confidence * 0.3) + (env_score * 0.3)
-    env_multiplier = round(env_score, 2)
+    # Fallback: hand-coded weighted formula
+    if risk_data is None:
+        base = SEVERITY_BASE.get(severity, 0.4)
+        env_score = info["risk_fn"](temp, humidity, days_since_rain) if info else 0.5
+        risk_score = (base * 0.4) + (confidence * 0.3) + (env_score * 0.3)
+        env_multiplier = round(env_score, 2)
 
     for threshold, level, color, action in RISK_LEVELS:
         if risk_score >= threshold:

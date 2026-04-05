@@ -1,19 +1,29 @@
-# Multimodal Crop Health Monitoring and Yield Prediction
+# Multimodal Crop Health Monitor
 
-**Author:** Khang Phan | itsmekhang  
+**Author:** Khang Phan | itsmekhang
 **Course Project** | Spring 2026
 
-An AI-powered system that combines computer vision and tabular data to detect crop diseases from leaf images and predict crop yield from environmental data.
+A multimodal AI system that detects crop diseases from leaf images and assesses environmental risk from live weather data — combining computer vision and machine learning for real-time field diagnosis.
 
 ---
 
-## Overview
+## How It Works
 
-Farmers currently rely on manual observation or delayed indicators, leading to late disease detection and inefficient use of water, pesticides, and fertilizers. This project addresses that gap with a modular, two-model ML pipeline:
+```
+Leaf Image  →  ResNet-18          →  Disease class + confidence
+Location    →  Open-Meteo API     →  Temperature, humidity, days since rain
+                                           ↓
+                                       XGBoost
+                                           ↓
+                              Risk score + treatment plan + revenue loss estimate
+```
 
-- **Image model** — ResNet-18 (PyTorch, transfer learning) trained on PlantVillage to classify plant diseases
-- **Yield model** — XGBoost / Random Forest trained on weather and historical yield data
-- **UI** — Streamlit dashboard for interactive inference
+Two separate models handle two separate modalities:
+
+- **ResNet-18** — image-only disease classifier trained on PlantVillage (38 classes, ~54k images)
+- **XGBoost** — environmental risk scorer trained on disease type + weather conditions
+
+Weather is intentionally kept out of the image classifier — a diseased leaf looks the same regardless of humidity. Weather only influences how urgently to act, not what disease is present.
 
 ---
 
@@ -22,17 +32,19 @@ Farmers currently rely on manual observation or delayed indicators, leading to l
 ```
 crop-health-monitoring/
 ├── notebooks/
-│   └── setup.ipynb            # Environment check, data loading, EDA plots
+│   └── setup.ipynb            # Dataset download, EDA, model training
 ├── src/
-│   ├── disease_classifier.py  # CNN model training and inference
-│   └── yield_predictor.py     # XGBoost/RF model training and inference
+│   ├── disease_classifier.py  # ResNet-18 training script
+│   ├── multimodal_model.py    # (unused in final version)
+│   ├── fusion.py              # XGBoost risk scoring
+│   ├── recommendations.py     # Treatment plans per disease
+│   └── weather.py             # Open-Meteo API integration
 ├── ui/
-│   └── app.py                 # Gradio dashboard
+│   └── app.py                 # Streamlit dashboard
 ├── data/
-│   ├── raw/                   # Downloaded datasets (not tracked by git)
-│   └── processed/             # Cleaned data outputs
-├── results/                   # Saved models, metrics, plots
-└── docs/                      # Architecture diagrams, blueprint report
+│   └── raw/                   # Downloaded datasets (not tracked)
+├── results/                   # Saved models (not tracked)
+└── docs/                      # Blueprint report
 ```
 
 ---
@@ -45,70 +57,42 @@ cd crop-health-monitoring
 pip install -r requirements.txt
 ```
 
-**Requirements:** Python 3.10+
-
 ---
 
-## How to Run
+## Usage
 
-### 1. Setup and Data Exploration
-Open and run the setup notebook:
-```bash
-jupyter notebook notebooks/setup.ipynb
-```
-This will:
-- Verify all dependencies are installed
-- Download datasets via Kaggle API (see Dataset section below)
-- Run exploratory data analysis with summary statistics and plots
+### 1. Train the models
+Open `notebooks/setup.ipynb` and run all cells. This will:
+- Clone PlantVillage dataset from GitHub (no Kaggle needed)
+- Train ResNet-18 disease classifier → `results/disease_model.pth`
+- Train XGBoost risk model → `results/risk_model.pkl`
 
-### 2. Train Disease Classifier
-```bash
-python src/disease_classifier.py
-```
-Trains a ResNet50V2 model on PlantVillage. Model saved to `results/disease_model.keras`.
-
-### 3. Train Yield Predictor
-```bash
-python src/yield_predictor.py
-```
-Trains an XGBoost regressor on crop yield data. Model saved to `results/yield_model.pkl`.
-
-### 4. Launch the UI
+### 2. Launch the dashboard
 ```bash
 streamlit run ui/app.py
 ```
-Opens a Streamlit dashboard in your browser at `http://localhost:8501`.
 
 ---
 
-## Datasets
+## Dataset
 
-| Dataset | Source | Type | Size |
+| Dataset | Source | Use |
+|---|---|---|
+| PlantVillage | [gabrieldgf4/PlantVillage-Dataset](https://github.com/gabrieldgf4/PlantVillage-Dataset) | ResNet-18 training |
+| Open-Meteo | [open-meteo.com](https://open-meteo.com) | Live weather at inference (free, no key) |
+
+---
+
+## Models
+
+| Model | Architecture | Input | Output |
 |---|---|---|---|
-| PlantVillage | [Kaggle](https://www.kaggle.com/datasets/emmarex/plantdisease) | Labeled leaf images | ~54,000 images, 38 classes |
-| Crop Yield | [Kaggle](https://www.kaggle.com/datasets/patelris/crop-yield-prediction-dataset) | Tabular (weather + yield) | ~28,000 rows |
-
-### Kaggle API Setup
-1. Go to https://www.kaggle.com/settings → API → **Create New Token**
-2. Place the downloaded `kaggle.json` at `~/.kaggle/kaggle.json`
-3. Run the download cells in `notebooks/setup.ipynb`
-
----
-
-## Architecture
-
-```
-[PlantVillage Images] ──► ResNet-18 ──► Disease Classification
-                                               │
-                                               ▼
-                                        Streamlit Dashboard
-                                               ▲
-[Crop Yield CSV] ──► XGBoost/RF ──► Yield Prediction (hg/ha)
-```
+| Disease classifier | ResNet-18 (frozen backbone, fine-tuned FC) | Leaf image | Disease class + confidence |
+| Risk scorer | XGBoost regressor | Disease class + temp + humidity + rainfall | Risk score 0–1 |
 
 ---
 
 ## Author
 
-**Khang Phan**  
+**Khang Phan**
 GitHub: [@itsmekhang](https://github.com/itsmekhang)

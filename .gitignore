@@ -25,3 +25,6 @@ env/
 # Kaggle credentials
 kaggle.json
 .kaggle/
+
+# Streamlit secrets (API keys)
+.streamlit/secrets.toml
