@@ -1,0 +1,27 @@
+# Data (download via notebook)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Results (generated artifacts)
+results/*.keras
+results/*.pkl
+results/*.png
+results/*.h5
+!results/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Kaggle credentials
+kaggle.json
+.kaggle/
