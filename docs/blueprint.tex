@@ -1,0 +1,275 @@
+\documentclass[11pt, letterpaper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds}
+
+\definecolor{green}{RGB}{46, 125, 50}
+\definecolor{blue}{RGB}{21, 101, 192}
+\definecolor{gray}{RGB}{97, 97, 97}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Crop Health Monitoring — Technical Blueprint}
+\lhead{Khang Phan}
+\rfoot{Page \thepage}
+
+\titleformat{\section}{\large\bfseries\color{green}}{}{0em}{}[\color{green}\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+
+\setlist[itemize]{noitemsep, topsep=2pt}
+
+\begin{document}
+
+% ── Title ──────────────────────────────────────────────────────────────────
+\begin{center}
+  {\LARGE\bfseries Multimodal Crop Health Monitoring}\\[6pt]
+  {\large and Yield Prediction}\\[10pt]
+  {\large Technical Blueprint Report}\\[6pt]
+  {\normalsize Khang Phan \quad|\quad Spring 2026}\\[4pt]
+  {\small \href{https://github.com/itsmekhang/crop-health-monitoring}{github.com/itsmekhang/crop-health-monitoring}}
+\end{center}
+
+\vspace{0.5em}
+\hrule
+\vspace{1em}
+
+% ── Section 1 ──────────────────────────────────────────────────────────────
+\section{Problem Context and Project Summary}
+
+Agriculture faces increasing pressure to efficiently use water, pesticides, and fertilizers, yet most farmers still rely on manual observation or delayed testing—leading to late disease detection, wasted resources, and reduced yields. This project builds a budget-friendly, modular AI system that detects crop diseases from leaf images using a convolutional neural network and predicts crop yield from environmental tabular data using gradient-boosted trees. The two models operate independently but are surfaced together through a unified Streamlit dashboard, giving farmers or researchers an interactive tool that combines visual and environmental insights in one interface. The system is designed to be reproducible, scalable, and extensible for future multimodal fusion work.
+
+% ── Section 2 ──────────────────────────────────────────────────────────────
+\section{Dataset}
+
+\subsection{PlantVillage (Image Classification)}
+\begin{itemize}
+  \item \textbf{Source:} \href{https://www.kaggle.com/datasets/emmarex/plantdisease}{Kaggle — emmarex/plantdisease}
+  \item \textbf{Type:} Labeled RGB leaf images (JPEG), 224$\times$224 px after resizing
+  \item \textbf{Size:} $\approx$54,000 images across 38 disease/healthy classes (14 crop species)
+  \item \textbf{Access:} Kaggle API — \texttt{kaggle datasets download -d emmarex/plantdisease}
+  \item \textbf{Preprocessing:} Resize to 224$\times$224; normalize with ImageNet mean/std; augment with random flips, rotations ($\pm15°$), and color jitter
+  \item \textbf{Challenges:} Class imbalance (some diseases have $<$200 images vs.\ $>$1,500 for others); controlled lab lighting may not generalize to field photos
+  \item \textbf{Ethics:} Publicly available; no personal data; image collection was non-invasive
+\end{itemize}
+
+\subsection{Crop Yield Dataset (Tabular Regression)}
+\begin{itemize}
+  \item \textbf{Source:} \href{https://www.kaggle.com/datasets/patelris/crop-yield-prediction-dataset}{Kaggle — patelris/crop-yield-prediction-dataset}
+  \item \textbf{Type:} CSV tabular data — country, crop type, year, rainfall, pesticide use, temperature, yield
+  \item \textbf{Size:} $\approx$28,000 rows, 7 columns; spans 1990–2013 across $\approx$100 countries
+  \item \textbf{Access:} Kaggle API — \texttt{kaggle datasets download -d patelris/crop-yield-prediction-dataset}
+  \item \textbf{Preprocessing:} Label-encode categorical columns (Area, Item); drop missing rows ($<$2\%); scale numeric features with StandardScaler
+  \item \textbf{Challenges:} Temporal data may have distribution shift; pesticide units vary by country
+  \item \textbf{Ethics:} Aggregated FAO statistics; no individual-level data; fair use for research
+\end{itemize}
+
+% ── Section 3 ──────────────────────────────────────────────────────────────
+\section{Planned Architecture}
+
+\subsection{Data Flow Diagram}
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=0.8cm and 1.2cm,
+  box/.style={draw, rounded corners=4pt, minimum width=2.4cm, minimum height=0.8cm,
+               align=center, font=\small},
+  greenbox/.style={box, fill=green!15, draw=green!60!black},
+  bluebox/.style={box,  fill=blue!12,  draw=blue!60!black},
+  orangebox/.style={box, fill=orange!15, draw=orange!70!black},
+  graybox/.style={box,  fill=gray!12,  draw=gray!60},
+  arr/.style={-{Stealth[scale=0.9]}, thick},
+]
+
+% Image pipeline (top row)
+\node[greenbox] (pv)    {PlantVillage\\Images};
+\node[greenbox, right=of pv] (aug)   {Augmentation\\+ Normalize};
+\node[bluebox,  right=of aug] (resnet) {ResNet-18\\(PyTorch)};
+\node[orangebox,right=of resnet] (dcls)  {Disease\\Classification};
+
+% Yield pipeline (bottom row)
+\node[greenbox, below=1.4cm of pv]   (csv)    {Crop Yield\\CSV};
+\node[greenbox, right=of csv] (feat)   {Feature Eng.\\+ Encoding};
+\node[bluebox,  right=of feat] (xgb)    {XGBoost\\Regressor};
+\node[orangebox,right=of xgb] (yreg)   {Yield\\Prediction};
+
+% Dashboard
+\node[graybox, right=1.6cm of dcls, yshift=-0.7cm] (ui) {Streamlit\\Dashboard};
+
+% Arrows — image
+\draw[arr] (pv)     -- (aug);
+\draw[arr] (aug)    -- (resnet);
+\draw[arr] (resnet) -- (dcls);
+\draw[arr] (dcls)   -- (ui);
+
+% Arrows — yield
+\draw[arr] (csv)  -- (feat);
+\draw[arr] (feat) -- (xgb);
+\draw[arr] (xgb)  -- (yreg);
+\draw[arr] (yreg) -- (ui);
+
+\end{tikzpicture}
+\end{center}
+
+\vspace{0.5em}
+
+\subsection{Image Model — Disease Classifier}
+\begin{itemize}
+  \item \textbf{Architecture:} ResNet-18 with ImageNet pretrained weights (torchvision)
+  \item \textbf{Strategy:} Transfer learning — freeze backbone, replace final FC layer with a 38-class linear head
+  \item \textbf{Fine-tuning:} After initial training, unfreeze last two ResNet blocks for domain adaptation
+  \item \textbf{Loss:} CrossEntropyLoss; \textbf{Optimizer:} Adam ($lr=10^{-3}$)
+  \item \textbf{Target metric:} Validation accuracy $\geq$85\%
+\end{itemize}
+
+\subsection{Tabular Model — Yield Predictor}
+\begin{itemize}
+  \item \textbf{Baseline:} Random Forest Regressor (scikit-learn)
+  \item \textbf{Main model:} XGBoost Regressor (n\_estimators=200, max\_depth=6)
+  \item \textbf{Features:} country, crop type, year, rainfall (mm/yr), pesticides (tonnes), avg temperature
+  \item \textbf{Target:} Crop yield in hg/ha (regression)
+  \item \textbf{Target metric:} R² $\geq$0.80 on held-out test split
+\end{itemize}
+
+\subsection{Interface}
+The Streamlit dashboard (\texttt{ui/app.py}) provides two tabs. The disease tab accepts an uploaded image and returns the predicted class with a confidence bar chart. The yield tab accepts numeric inputs via sliders and dropdowns and returns the predicted yield. Models are cached on load to avoid reloading between interactions.
+
+% ── Section 4 ──────────────────────────────────────────────────────────────
+\section{User Interface Plan}
+
+\subsection{Inputs and Outputs}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Tab} & \textbf{User Input} & \textbf{Output Displayed} \\
+\midrule
+Disease Detection & Upload leaf image (.jpg/.png) & Predicted disease class + confidence bar chart \\
+Yield Prediction  & Region, crop, year, rainfall, pesticides, temp & Predicted yield (hg/ha and t/ha) + advice text \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Wireframe Mockup}
+
+\begin{center}
+\begin{tikzpicture}[font=\small]
+  % Browser chrome
+  \draw[rounded corners=6pt, thick] (0,0) rectangle (12, 8);
+  \draw[fill=gray!20] (0,7.3) rectangle (12,8);
+  \node at (6, 7.65) {\textbf{Crop Health Monitor} \quad \texttt{localhost:8501}};
+
+  % Title bar
+  \draw[fill=green!20] (0.1, 6.7) rectangle (11.9, 7.2);
+  \node at (6, 6.95) {\textbf{🌿 Multimodal Crop Health Monitoring}};
+
+  % Tabs
+  \draw[fill=green!30, rounded corners=2pt] (0.2, 6.3) rectangle (3.0, 6.65);
+  \node at (1.6, 6.47) {\textbf{Disease Detection}};
+  \draw[fill=gray!15, rounded corners=2pt] (3.1, 6.3) rectangle (5.5, 6.65);
+  \node at (4.3, 6.47) {Yield Prediction};
+
+  % Left panel — upload
+  \draw[dashed, thick, rounded corners=4pt, fill=gray!8] (0.2, 3.5) rectangle (5.7, 6.2);
+  \node at (2.95, 5.8) {\textbf{Upload a Leaf Image}};
+  \node[gray] at (2.95, 5.35) {[  Drop .jpg / .png here  ]};
+  \draw[fill=green!10, rounded corners=2pt] (1.5, 4.0) rectangle (4.4, 4.6);
+  \node at (2.95, 4.3) {Browse files\ldots};
+
+  % Right panel — result
+  \draw[rounded corners=4pt, fill=blue!8] (5.9, 3.5) rectangle (11.8, 6.2);
+  \node at (8.85, 5.85) {\textbf{Result}};
+  \draw[fill=red!20, rounded corners=3pt] (6.2, 5.3) rectangle (11.5, 5.7);
+  \node at (8.85, 5.5) {Tomato Late Blight — 91.3\% confidence};
+  \node at (8.85, 4.9) {\textbf{Top 5 Predictions}};
+  % Confidence bars (simulated)
+  \foreach \y/\w/\lbl in {4.55/4.5/Tomato Late Blight, 4.25/1.2/Tomato Early Blight,
+                            3.95/0.6/Tomato Healthy, 3.65/0.3/Pepper Bacterial Spot}{
+    \draw[fill=blue!50] (6.2, \y) rectangle ({6.2+\w}, {\y+0.2});
+    \node[anchor=west, font=\tiny] at ({6.2+\w+0.05}, {\y+0.1}) {\lbl};
+  }
+
+  % Footer
+  \node[gray, font=\footnotesize] at (6, 0.3) {Khang Phan · Spring 2026 · github.com/itsmekhang/crop-health-monitoring};
+\end{tikzpicture}
+\end{center}
+
+The interface prioritizes simplicity: a single file upload button for disease detection and labeled numeric inputs for yield prediction. Color-coded result cards (green = healthy, red = disease) provide immediate visual feedback. The top-5 bar chart aids interpretability by showing model uncertainty.
+
+% ── Section 5 ──────────────────────────────────────────────────────────────
+\section{Innovation and Anticipated Challenges}
+
+\subsection{Innovation}
+This project is novel in its \textit{practical multimodal design}: rather than forcing a single fused model (which is difficult to train and debug), it trains two specialized models and surfaces them together through one interface. This modular approach lowers the barrier for farmers or agronomists to use AI tools without requiring technical knowledge. The combination of transfer learning on PlantVillage and gradient-boosted trees on environmental data covers both early disease detection (visual signal) and seasonal yield planning (environmental signal)—two distinct but complementary agricultural needs.
+
+\subsection{Key Technical Risks and Mitigation}
+
+\begin{center}
+\begin{tabular}{@{}>{\bfseries}p{4.5cm}p{4.5cm}p{4.5cm}@{}}
+\toprule
+Risk & Impact & Mitigation \\
+\midrule
+Class imbalance in PlantVillage & Rare diseases under-predicted & Weighted CrossEntropyLoss; data augmentation (flips, jitter, rotation) \\
+\addlinespace
+Lab-to-field domain shift & Model fails on real farm photos & Aggressive augmentation; evaluate on a held-out real-world subset \\
+\addlinespace
+Tabular data leakage (year as feature) & Inflated R² from time trend & Time-based train/test split (train pre-2010, test 2010–2013) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ── Section 6 ──────────────────────────────────────────────────────────────
+\section{Implementation Timeline}
+
+\begin{center}
+\begin{tabular}{@{}>{\bfseries}p{2.8cm}p{4.5cm}p{5.5cm}@{}}
+\toprule
+Week & Focus & Expected Outcome \\
+\midrule
+Apr 5 – Apr 12 &
+  Data acquisition, EDA, baseline models &
+  Working data loaders; EDA plots in \texttt{setup.ipynb}; random forest baseline ($R^2 > 0.6$) \\
+\addlinespace
+Apr 12 – Apr 19 &
+  ResNet-18 training; XGBoost tuning; metric tracking &
+  Disease classifier $\geq$80\% val accuracy; XGBoost $R^2 \geq 0.80$; \texttt{results/} populated \\
+\addlinespace
+Apr 19 – Apr 26 &
+  Streamlit UI build; model integration; demo run &
+  Fully interactive dashboard running locally; end-to-end inference working on both tabs \\
+\addlinespace
+Apr 26 – Apr 29 &
+  Final report, README polish, repo cleanup &
+  Completed report; clean reproducible repo; presentation-ready demo \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ── Section 7 ──────────────────────────────────────────────────────────────
+\section{Responsible AI Reflection}
+
+\textbf{Fairness:} The PlantVillage dataset was collected in controlled laboratory settings, which may not reflect the diversity of field conditions across different geographies, soil types, or lighting environments. A model trained only on this data could underperform for smallholder farmers in regions underrepresented in the dataset. Future work should evaluate performance separately by crop type and geographic region, and collect field images from diverse settings.
+
+\textbf{Transparency:} The Streamlit interface displays top-5 class probabilities rather than a single hard prediction, giving users a sense of model confidence and uncertainty. For the yield model, feature importance plots (saved to \texttt{results/}) make the model's reasoning inspectable.
+
+\textbf{Environmental impact:} ResNet-18 is a relatively lightweight architecture. Training on a single GPU for 10 epochs on 54,000 images takes approximately 30–60 minutes—negligible energy use compared to large foundation models. The XGBoost model is CPU-bound and trains in under a minute.
+
+\textbf{Misuse risk:} Overconfident disease predictions could lead a farmer to apply unnecessary pesticides, causing environmental harm. The UI is designed to communicate uncertainty explicitly to discourage overreliance on model outputs.
+
+\vspace{1em}
+\hrule
+\vspace{0.5em}
+\begin{center}
+\small GitHub: \href{https://github.com/itsmekhang/crop-health-monitoring}{github.com/itsmekhang/crop-health-monitoring} \quad|\quad Author: Khang Phan \quad|\quad Spring 2026
+\end{center}
+
+\end{document}
