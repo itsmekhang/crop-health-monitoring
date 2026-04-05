@@ -19,8 +19,6 @@
 
 \pagestyle{fancy}
 \fancyhf{}
-\rhead{Crop Health Monitoring — Technical Blueprint}
-\lhead{Khang Phan}
 \rfoot{Page \thepage}
 
 \titleformat{\section}{\large\bfseries\color{green}}{}{0em}{}[\color{green}\titlerule]
@@ -33,9 +31,8 @@
 % ── Title ──────────────────────────────────────────────────────────────────
 \begin{center}
   {\LARGE\bfseries Multimodal Crop Health Monitoring}\\[6pt]
-  {\large and Environmental Risk Assessment}\\[10pt]
-  {\large Technical Blueprint Report}\\[6pt]
-  {\normalsize Khang Phan \quad|\quad Spring 2026}\\[4pt]
+  {\large EGN6217 - Applied DEEP Learning}\\[10pt]
+  {\normalsize Khang Phan - Spring 2026}\\[4pt]
   {\small \href{https://github.com/itsmekhang/crop-health-monitoring}{github.com/itsmekhang/crop-health-monitoring}}
 \end{center}
 
@@ -46,7 +43,7 @@
 % ── Section 1 ──────────────────────────────────────────────────────────────
 \section{Problem Context and Project Summary}
 
-Agriculture faces increasing pressure to efficiently use water, pesticides, and fertilizers, yet most farmers still rely on manual observation or delayed testing—leading to late disease detection, wasted resources, and reduced yields. This project builds a budget-friendly, modular AI system that detects crop diseases from leaf images using a convolutional neural network and assesses environmental risk from live weather data using gradient-boosted trees. The two models operate independently but are surfaced together through a unified Streamlit dashboard, giving farmers or researchers an interactive tool that combines visual and environmental insights in one interface. The system is designed to be reproducible, scalable, and extensible for future multimodal fusion work.
+The agriculture industry has evolved rapidly in recent history and is now facing increasing pressure to efficiently use water, pesticides, and fertilizers, yet most farmers still rely on manual observation or delayed testing—leading to late disease detection, wasted resources, and reduced yields. This project builds a budget-friendly, modular AI system that detects crop diseases from leaf images using ResNet18 and assesses environmental risk from live weather values using gradient-boosted trees. The two models operate independently but are surfaced together through a Streamlit interface, giving farmers or researchers an interactive tool that combines visual and environmental insights in one interface. The system is designed to be scalable and extensible for future multimodal enhancements.
 
 % ── Section 2 ──────────────────────────────────────────────────────────────
 \section{Dataset}
@@ -54,22 +51,22 @@ Agriculture faces increasing pressure to efficiently use water, pesticides, and 
 \subsection{PlantVillage (Image Classification)}
 \begin{itemize}
   \item \textbf{Source:} \href{https://www.kaggle.com/datasets/emmarex/plantdisease}{Kaggle — emmarex/plantdisease}
-  \item \textbf{Type:} Labeled RGB leaf images (JPEG), 224$\times$224 px after resizing
-  \item \textbf{Size:} $\approx$54,000 images across 38 disease/healthy classes (14 crop species)
+  \item \textbf{Type:} Labeled RGB leaf images, 224$\times$224 px after resizing
+  \item \textbf{Size:} $\approx$54,000 images within 38 disease/healthy classes
   \item \textbf{Access:} Kaggle API — \texttt{kaggle datasets download -d emmarex/plantdisease}
-  \item \textbf{Preprocessing:} Resize to 224$\times$224; normalize with ImageNet mean/std; augment with random flips, rotations ($\pm15°$), and color jitter
-  \item \textbf{Challenges:} Class imbalance (some diseases have $<$200 images vs.\ $>$1,500 for others); controlled lab lighting may not generalize to field photos
-  \item \textbf{Ethics:} Publicly available; no personal data; image collection was non-invasive
+  \item \textbf{Preprocessing:} Resize to 224$\times$224; normalize with ImageNet; augment with random flips, rotations ($\pm15°$), and color jitter
+  \item \textbf{Challenges:} Class imbalance; controlled lab lighting may not generalize well
+  \item \textbf{Ethics:} Publicly available
 \end{itemize}
 
 \subsection{USDA NASS QuickStats (Yield Baselines)}
 \begin{itemize}
   \item \textbf{Source:} \href{https://quickstats.nass.usda.gov}{USDA National Agricultural Statistics Service — QuickStats API}
-  \item \textbf{Type:} REST API returning JSON — crop yield (CWT/acre), prices, and environmental statistics by state and year
+  \item \textbf{Type:} API returning crop yield prices, and environmental values by state and year
   \item \textbf{Crops:} Tomatoes, Potatoes, Bell Peppers — matching the disease model's crop coverage
-  \item \textbf{Access:} Free API key from \href{https://quickstats.nass.usda.gov/api}{quickstats.nass.usda.gov/api}; queried at app startup and cached weekly
-  \item \textbf{Usage:} National average yield (converted from CWT/acre to kg/ha) used as the healthy-crop baseline for revenue loss estimation
-  \item \textbf{Challenges:} US-specific data; yield figures reflect high-input irrigated farming and may overestimate baselines for smallholder contexts
+  \item \textbf{Access:} Free API key from \href{https://quickstats.nass.usda.gov/api}{quickstats.nass.usda.gov/api}
+  \item \textbf{Usage:} National average yield as the healthy-crop baseline for revenue loss estimation
+  \item \textbf{Challenges:} US-specific data
   \item \textbf{Ethics:} Publicly funded government data; open access; no personal or sensitive information
 \end{itemize}
 
@@ -91,19 +88,19 @@ Agriculture faces increasing pressure to efficiently use water, pesticides, and 
 ]
 
 % Image pipeline (top row)
-\node[greenbox] (pv)    {PlantVillage\\Images};
+\node[greenbox] (pv)    {PlantVillage\\Dataset};
 \node[greenbox, right=of pv] (aug)   {Augmentation\\+ Normalize};
-\node[bluebox,  right=of aug] (resnet) {ResNet-18\\(PyTorch)};
+\node[bluebox,  right=of aug] (resnet) {ResNet-18};
 \node[orangebox,right=of resnet] (dcls)  {Disease\\Classification};
 
 % Risk pipeline (bottom row)
-\node[greenbox, below=1.4cm of pv]   (csv)    {USDA NASS\\+ Open-Meteo};
+\node[greenbox, below=1.4cm of pv]   (csv)    {USDA NASS\\ Open-Meteo};
 \node[greenbox, right=of csv] (feat)   {Weather\\Features};
-\node[bluebox,  right=of feat] (xgb)    {XGBoost\\Regressor};
+\node[bluebox,  right=of feat] (xgb)    {XGBoost};
 \node[orangebox,right=of xgb] (yreg)   {Risk\\Assessment};
 
 % Dashboard
-\node[graybox, right=1.6cm of dcls, yshift=-0.7cm] (ui) {Streamlit\\Dashboard};
+\node[graybox, right=1.6cm of dcls, yshift=-0.7cm] (ui) {User\\Interface};
 
 % Arrows — image
 \draw[arr] (pv)     -- (aug);
@@ -124,21 +121,22 @@ Agriculture faces increasing pressure to efficiently use water, pesticides, and 
 
 \subsection{Image Model — Disease Classifier}
 \begin{itemize}
-  \item \textbf{Architecture:} ResNet-18 with ImageNet pretrained weights (torchvision)
-  \item \textbf{Strategy:} Transfer learning — freeze backbone, replace final FC layer with a 38-class linear head
-  \item \textbf{Fine-tuning:} After initial training, unfreeze last two ResNet blocks for domain adaptation
-  \item \textbf{Loss:} CrossEntropyLoss; \textbf{Optimizer:} Adam ($lr=10^{-3}$)
+  \item \textbf{Architecture:} ResNet-18 with ImageNet pretrained weights
+  \item \textbf{Strategy:} Transfer learning
+  \item \textbf{Fine-tuning:} After initial training, resume the last two ResNet blocks for domain adaptation
+  \item \textbf{Loss:} CrossEntropyLoss
+  \item\textbf{Optimizer:} Adam 
   \item \textbf{Target metric:} Validation accuracy $\geq$85\%
 \end{itemize}
 
 \subsection{Tabular Model — Environmental Risk Scorer}
 \begin{itemize}
   \item \textbf{Main model:} XGBoost Regressor (n\_estimators=300, max\_depth=5)
-  \item \textbf{Features:} temperature (°C), humidity (\%), days since rain, ResNet confidence, disease class (encoded)
-  \item \textbf{Target:} Risk score in $[0, 1]$ — derived from agronomic disease-weather relationships
-  \item \textbf{Weather source:} Open-Meteo API (free, no key required) — fetched live by location at inference
-  \item \textbf{Yield baseline:} USDA NASS QuickStats API — national average yield per crop (CWT/acre $\rightarrow$ kg/ha)
-  \item \textbf{Achieved metric:} Val R² = 0.998, Val MAE = 0.008 on held-out split
+  \item \textbf{Features:} temperature, humidity, days since rain, ResNet confidence, disease class
+  \item \textbf{Target:} Risk score in  the range of $[0, 1]$ — derived from augmented disease-weather relationships
+  \item \textbf{Weather source:} Open-Meteo API, fetched live by location at runtime
+  \item \textbf{Yield baseline:} USDA NASS QuickStats API — national average yield per crop in lbs/acre
+  \item \textbf{Achieved metric:} Validation R² = 0.998, Validation MAE = 0.008 on held-out split
 \end{itemize}
 
 \subsection{Interface}
@@ -156,78 +154,26 @@ The Streamlit dashboard (\texttt{ui/app.py}) accepts leaf images, a location nam
 \midrule
 Leaf Images     & Upload one or more .jpg/.png photos & Disease class, confidence, top-5 predictions \\
 Weather         & City or region name & Live temp, humidity, days since rain (Open-Meteo) \\
-Economic Impact & Field size (ha), crop price (USD/kg) & Yield loss (kg), revenue loss (USD) \\
+Economic Impact & Field size (acres), crop price (USD/lb) & Yield loss (lbs), revenue loss (USD) \\
 \midrule
 \multicolumn{2}{l}{\textit{Combined output per image}} & Risk score, risk level, treatment plan \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\subsection{Wireframe Mockup}
+\subsection{Application Screenshots}
 
-\begin{center}
-\begin{tikzpicture}[font=\small, x=1cm, y=1cm]
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{screenshot_input.png}
+  \caption{Dashboard input panel — leaf image upload, live weather via Open-Meteo, and economic impact inputs.}
+\end{figure}
 
-  % ── Outer browser frame ──────────────────────────────────────────────────
-  \draw[rounded corners=5pt, thick, gray] (0,0) rectangle (13,9);
-
-  % Address bar
-  \draw[fill=gray!18, draw=none] (0,8.3) rectangle (13,9);
-  \node[font=\footnotesize\ttfamily] at (6.5,8.65) {localhost:8501 --- Crop Health Monitor};
-
-  % ── App title bar ────────────────────────────────────────────────────────
-  \draw[fill=green!18, draw=none] (0.1,7.75) rectangle (12.9,8.25);
-  \node[font=\normalsize\bfseries] at (6.5,8.0) {Multimodal Crop Health Monitoring};
-
-  % ── Tabs ─────────────────────────────────────────────────────────────────
-  \draw[fill=green!35, rounded corners=2pt] (0.2,7.35) rectangle (3.2,7.7);
-  \node[font=\small\bfseries] at (1.7,7.52) {Disease Detection};
-
-  \draw[fill=gray!15, rounded corners=2pt] (3.3,7.35) rectangle (5.8,7.7);
-  \node[font=\small] at (4.55,7.52) {Yield Prediction};
-
-  % ── Left panel: image upload ─────────────────────────────────────────────
-  \draw[dashed, thick, rounded corners=4pt, fill=gray!7] (0.2,3.8) rectangle (6.0,7.25);
-  \node[font=\small\bfseries] at (3.1,6.9) {Upload a Leaf Image};
-  \draw[fill=gray!20, rounded corners=3pt] (0.9,6.1) rectangle (5.3,6.7);
-  \node[font=\footnotesize, text=gray] at (3.1,6.4) {[ Drop .jpg / .png here ]};
-  \draw[fill=green!15, rounded corners=3pt] (1.5,4.3) rectangle (4.7,4.9);
-  \node[font=\small] at (3.1,4.6) {Browse files\ldots};
-
-  % ── Right panel: results ─────────────────────────────────────────────────
-  \draw[rounded corners=4pt, fill=blue!7] (6.2,3.8) rectangle (12.8,7.25);
-  \node[font=\small\bfseries] at (9.5,6.95) {Result};
-
-  % Result card (red = disease detected)
-  \draw[fill=red!18, rounded corners=3pt] (6.4,6.4) rectangle (12.6,6.85);
-  \node[font=\small] at (9.5,6.62) {Tomato Late Blight --- 91.3\% confidence};
-
-  \node[font=\small\bfseries] at (9.5,6.1) {Top 5 Predictions};
-
-  % Bar 1 — Tomato Late Blight (longest)
-  \draw[fill=blue!55] (6.4,5.65) rectangle (12.0,5.92);
-  \node[anchor=west, font=\tiny] at (6.45,5.785) {Tomato Late Blight};
-
-  % Bar 2 — Tomato Early Blight
-  \draw[fill=blue!40] (6.4,5.3) rectangle (9.8,5.57);
-  \node[anchor=west, font=\tiny] at (6.45,5.435) {Tomato Early Blight};
-
-  % Bar 3 — Tomato Healthy
-  \draw[fill=blue!25] (6.4,4.95) rectangle (8.5,5.22);
-  \node[anchor=west, font=\tiny] at (6.45,5.085) {Tomato Healthy};
-
-  % Bar 4 — Pepper Bacterial Spot
-  \draw[fill=blue!15] (6.4,4.6) rectangle (7.6,4.87);
-  \node[anchor=west, font=\tiny] at (6.45,4.735) {Pepper Bacterial Spot};
-
-  % ── Footer ───────────────────────────────────────────────────────────────
-  \node[font=\footnotesize, text=gray] at (6.5,0.25)
-    {Khang Phan · Spring 2026 · github.com/itsmekhang/crop-health-monitoring};
-
-\end{tikzpicture}
-\end{center}
-
-The interface prioritizes simplicity: a single file upload button for disease detection and labeled numeric inputs for yield prediction. Color-coded result cards (green = healthy, red = disease) provide immediate visual feedback. The top-5 bar chart aids interpretability by showing model uncertainty.
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\textwidth]{screenshot_output.png}
+  \caption{Plant-by-Plant Report — disease diagnosis, XGBoost risk assessment, treatment plan, and estimated revenue loss.}
+\end{figure}
 
 % ── Section 5 ──────────────────────────────────────────────────────────────
 \section{Innovation and Anticipated Challenges}
