@@ -162,44 +162,64 @@ Yield Prediction  & Region, crop, year, rainfall, pesticides, temp & Predicted y
 \subsection{Wireframe Mockup}
 
 \begin{center}
-\begin{tikzpicture}[font=\small]
-  % Browser chrome
-  \draw[rounded corners=6pt, thick] (0,0) rectangle (12, 8);
-  \draw[fill=gray!20] (0,7.3) rectangle (12,8);
-  \node at (6, 7.65) {\textbf{Crop Health Monitor} \quad \texttt{localhost:8501}};
+\begin{tikzpicture}[font=\small, x=1cm, y=1cm]
 
-  % Title bar
-  \draw[fill=green!20] (0.1, 6.7) rectangle (11.9, 7.2);
-  \node at (6, 6.95) {\textbf{🌿 Multimodal Crop Health Monitoring}};
+  % ── Outer browser frame ──────────────────────────────────────────────────
+  \draw[rounded corners=5pt, thick, gray] (0,0) rectangle (13,9);
 
-  % Tabs
-  \draw[fill=green!30, rounded corners=2pt] (0.2, 6.3) rectangle (3.0, 6.65);
-  \node at (1.6, 6.47) {\textbf{Disease Detection}};
-  \draw[fill=gray!15, rounded corners=2pt] (3.1, 6.3) rectangle (5.5, 6.65);
-  \node at (4.3, 6.47) {Yield Prediction};
+  % Address bar
+  \draw[fill=gray!18, draw=none] (0,8.3) rectangle (13,9);
+  \node[font=\footnotesize\ttfamily] at (6.5,8.65) {localhost:8501 --- Crop Health Monitor};
 
-  % Left panel — upload
-  \draw[dashed, thick, rounded corners=4pt, fill=gray!8] (0.2, 3.5) rectangle (5.7, 6.2);
-  \node at (2.95, 5.8) {\textbf{Upload a Leaf Image}};
-  \node[gray] at (2.95, 5.35) {[  Drop .jpg / .png here  ]};
-  \draw[fill=green!10, rounded corners=2pt] (1.5, 4.0) rectangle (4.4, 4.6);
-  \node at (2.95, 4.3) {Browse files\ldots};
+  % ── App title bar ────────────────────────────────────────────────────────
+  \draw[fill=green!18, draw=none] (0.1,7.75) rectangle (12.9,8.25);
+  \node[font=\normalsize\bfseries] at (6.5,8.0) {Multimodal Crop Health Monitoring};
 
-  % Right panel — result
-  \draw[rounded corners=4pt, fill=blue!8] (5.9, 3.5) rectangle (11.8, 6.2);
-  \node at (8.85, 5.85) {\textbf{Result}};
-  \draw[fill=red!20, rounded corners=3pt] (6.2, 5.3) rectangle (11.5, 5.7);
-  \node at (8.85, 5.5) {Tomato Late Blight — 91.3\% confidence};
-  \node at (8.85, 4.9) {\textbf{Top 5 Predictions}};
-  % Confidence bars (simulated)
-  \foreach \y/\w/\lbl in {4.55/4.5/Tomato Late Blight, 4.25/1.2/Tomato Early Blight,
-                            3.95/0.6/Tomato Healthy, 3.65/0.3/Pepper Bacterial Spot}{
-    \draw[fill=blue!50] (6.2, \y) rectangle ({6.2+\w}, {\y+0.2});
-    \node[anchor=west, font=\tiny] at ({6.2+\w+0.05}, {\y+0.1}) {\lbl};
-  }
+  % ── Tabs ─────────────────────────────────────────────────────────────────
+  \draw[fill=green!35, rounded corners=2pt] (0.2,7.35) rectangle (3.2,7.7);
+  \node[font=\small\bfseries] at (1.7,7.52) {Disease Detection};
 
-  % Footer
-  \node[gray, font=\footnotesize] at (6, 0.3) {Khang Phan · Spring 2026 · github.com/itsmekhang/crop-health-monitoring};
+  \draw[fill=gray!15, rounded corners=2pt] (3.3,7.35) rectangle (5.8,7.7);
+  \node[font=\small] at (4.55,7.52) {Yield Prediction};
+
+  % ── Left panel: image upload ─────────────────────────────────────────────
+  \draw[dashed, thick, rounded corners=4pt, fill=gray!7] (0.2,3.8) rectangle (6.0,7.25);
+  \node[font=\small\bfseries] at (3.1,6.9) {Upload a Leaf Image};
+  \draw[fill=gray!20, rounded corners=3pt] (0.9,6.1) rectangle (5.3,6.7);
+  \node[font=\footnotesize, text=gray] at (3.1,6.4) {[ Drop .jpg / .png here ]};
+  \draw[fill=green!15, rounded corners=3pt] (1.5,4.3) rectangle (4.7,4.9);
+  \node[font=\small] at (3.1,4.6) {Browse files\ldots};
+
+  % ── Right panel: results ─────────────────────────────────────────────────
+  \draw[rounded corners=4pt, fill=blue!7] (6.2,3.8) rectangle (12.8,7.25);
+  \node[font=\small\bfseries] at (9.5,6.95) {Result};
+
+  % Result card (red = disease detected)
+  \draw[fill=red!18, rounded corners=3pt] (6.4,6.4) rectangle (12.6,6.85);
+  \node[font=\small] at (9.5,6.62) {Tomato Late Blight --- 91.3\% confidence};
+
+  \node[font=\small\bfseries] at (9.5,6.1) {Top 5 Predictions};
+
+  % Bar 1 — Tomato Late Blight (longest)
+  \draw[fill=blue!55] (6.4,5.65) rectangle (12.0,5.92);
+  \node[anchor=west, font=\tiny] at (6.45,5.785) {Tomato Late Blight};
+
+  % Bar 2 — Tomato Early Blight
+  \draw[fill=blue!40] (6.4,5.3) rectangle (9.8,5.57);
+  \node[anchor=west, font=\tiny] at (6.45,5.435) {Tomato Early Blight};
+
+  % Bar 3 — Tomato Healthy
+  \draw[fill=blue!25] (6.4,4.95) rectangle (8.5,5.22);
+  \node[anchor=west, font=\tiny] at (6.45,5.085) {Tomato Healthy};
+
+  % Bar 4 — Pepper Bacterial Spot
+  \draw[fill=blue!15] (6.4,4.6) rectangle (7.6,4.87);
+  \node[anchor=west, font=\tiny] at (6.45,4.735) {Pepper Bacterial Spot};
+
+  % ── Footer ───────────────────────────────────────────────────────────────
+  \node[font=\footnotesize, text=gray] at (6.5,0.25)
+    {Khang Phan · Spring 2026 · github.com/itsmekhang/crop-health-monitoring};
+
 \end{tikzpicture}
 \end{center}
 
@@ -210,22 +230,6 @@ The interface prioritizes simplicity: a single file upload button for disease de
 
 \subsection{Innovation}
 This project is novel in its \textit{practical multimodal design}: rather than forcing a single fused model (which is difficult to train and debug), it trains two specialized models and surfaces them together through one interface. This modular approach lowers the barrier for farmers or agronomists to use AI tools without requiring technical knowledge. The combination of transfer learning on PlantVillage and gradient-boosted trees on environmental data covers both early disease detection (visual signal) and seasonal yield planning (environmental signal)—two distinct but complementary agricultural needs.
-
-\subsection{Key Technical Risks and Mitigation}
-
-\begin{center}
-\begin{tabular}{@{}>{\bfseries}p{4.5cm}p{4.5cm}p{4.5cm}@{}}
-\toprule
-Risk & Impact & Mitigation \\
-\midrule
-Class imbalance in PlantVillage & Rare diseases under-predicted & Weighted CrossEntropyLoss; data augmentation (flips, jitter, rotation) \\
-\addlinespace
-Lab-to-field domain shift & Model fails on real farm photos & Aggressive augmentation; evaluate on a held-out real-world subset \\
-\addlinespace
-Tabular data leakage (year as feature) & Inflated R² from time trend & Time-based train/test split (train pre-2010, test 2010–2013) \\
-\bottomrule
-\end{tabular}
-\end{center}
 
 % ── Section 6 ──────────────────────────────────────────────────────────────
 \section{Implementation Timeline}
