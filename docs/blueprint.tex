@@ -140,7 +140,7 @@ The agriculture industry has evolved rapidly in recent history and is now facing
 \end{itemize}
 
 \subsection{Interface}
-The Streamlit dashboard (\texttt{ui/app.py}) accepts leaf images, a location name, and economic inputs (field size, crop price). Weather is fetched automatically from Open-Meteo using the location. The disease classifier runs on the uploaded images; XGBoost scores risk from the disease result and live weather. Outputs include disease class, confidence, risk level, treatment plan, and estimated revenue loss. Models are cached on load to avoid reloading between interactions.
+The Streamlit user interface (\texttt{ui/app.py}) takes leaf image files, a location, and economic inputs (field size, crop price). Weather is fetched automatically from Open-Meteo using the location. The disease classifier analyzes the uploaded images; XGBoost scores risk from the disease result and live environmental conditions. Outputs return disease class, confidence, risk level, treatment plan, and estimated revenue loss. 
 
 % ── Section 4 ──────────────────────────────────────────────────────────────
 \section{User Interface Plan}
@@ -152,9 +152,9 @@ The Streamlit dashboard (\texttt{ui/app.py}) accepts leaf images, a location nam
 \toprule
 \textbf{Section} & \textbf{User Input} & \textbf{Output Displayed} \\
 \midrule
-Leaf Images     & Upload one or more .jpg/.png photos & Disease class, confidence, top-5 predictions \\
-Weather         & City or region name & Live temp, humidity, days since rain (Open-Meteo) \\
-Economic Impact & Field size (acres), crop price (USD/lb) & Yield loss (lbs), revenue loss (USD) \\
+Leaf Images     & Upload one or more leaf photos & Disease class, confidence, top-5 predictions \\
+Weather         & City or region name & Live temp, humidity, days since rain \\
+Economic Impact & Field size, crop price & Yield loss, revenue loss  \\
 \midrule
 \multicolumn{2}{l}{\textit{Combined output per image}} & Risk score, risk level, treatment plan \\
 \bottomrule
@@ -167,9 +167,7 @@ Economic Impact & Field size (acres), crop price (USD/lb) & Yield loss (lbs), re
   \centering
   \includegraphics[width=\textwidth]{screenshot_input.png}
   \caption{Dashboard input panel — leaf image upload, live weather via Open-Meteo, and economic impact inputs.}
-\end{figure}
 
-\begin{figure}[h]
   \centering
   \includegraphics[width=\textwidth]{screenshot_output.png}
   \caption{Plant-by-Plant Report — disease diagnosis, XGBoost risk assessment, treatment plan, and estimated revenue loss.}
@@ -179,7 +177,7 @@ Economic Impact & Field size (acres), crop price (USD/lb) & Yield loss (lbs), re
 \section{Innovation and Anticipated Challenges}
 
 \subsection{Innovation}
-This project is novel in its \textit{practical multimodal design}: rather than forcing a single fused model (which is difficult to train and debug), it trains two specialized models and surfaces them together through one interface. This modular approach lowers the barrier for farmers or agronomists to use AI tools without requiring technical knowledge. The combination of transfer learning on PlantVillage and gradient-boosted trees on environmental data covers both early disease detection (visual signal) and seasonal yield planning (environmental signal)—two distinct but complementary agricultural needs.
+This project is novel in its \textit{practical multimodal design}: rather than forcing a single fused model which is difficult to train and debug, it trains two separate models and combine them together through one interface. This modular approach lowers the complexity for farmers to use AI tools without requiring technical knowledge. The combination of transfer learning on PlantVillage and gradient-boosted trees on environmental data includes both early disease detection and seasonal yield planning.
 
 % ── Section 6 ──────────────────────────────────────────────────────────────
 \section{Implementation Timeline}
@@ -190,7 +188,7 @@ This project is novel in its \textit{practical multimodal design}: rather than f
 Week & Focus & Expected Outcome \\
 \midrule
 Apr 5 – Apr 12 &
-  Data acquisition, EDA, baseline models &
+  Data collection, EDA, baseline models &
   Working data loaders; EDA plots in \texttt{setup.ipynb}; random forest baseline ($R^2 > 0.6$) \\
 \addlinespace
 Apr 12 – Apr 19 &
@@ -199,11 +197,11 @@ Apr 12 – Apr 19 &
 \addlinespace
 Apr 19 – Apr 26 &
   Streamlit UI build; model integration; demo run &
-  Fully interactive dashboard running locally; end-to-end inference working on both tabs \\
+  Fully interactive dashboard; end-to-end inference working on both functionalities \\
 \addlinespace
 Apr 26 – Apr 29 &
   Final report, README polish, repo cleanup &
-  Completed report; clean reproducible repo; presentation-ready demo \\
+  Completed report; tidy repository; presentation-ready prototype \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -211,13 +209,13 @@ Apr 26 – Apr 29 &
 % ── Section 7 ──────────────────────────────────────────────────────────────
 \section{Responsible AI Reflection}
 
-\textbf{Fairness:} The PlantVillage dataset was collected in controlled laboratory settings, which may not reflect the diversity of field conditions across different geographies, soil types, or lighting environments. A model trained only on this data could underperform for smallholder farmers in regions underrepresented in the dataset. Future work should evaluate performance separately by crop type and geographic region, and collect field images from diverse settings.
+\textbf{Fairness:} The PlantVillage dataset was collected in consistent laboratory settings, which might not generalize well under a variety field conditions across different geographies, soil types, or lighting environments. A model trained only on this data could perform underwhelmingly for farmers in regions underrepresented in the dataset. Future work should evaluate performance separately by each crop class or conditions, and collect field images from real-world settings.
 
-\textbf{Transparency:} The Streamlit interface displays top-5 class probabilities rather than a single hard prediction, giving users a sense of model confidence and uncertainty. For the yield model, feature importance plots (saved to \texttt{results/}) make the model's reasoning inspectable.
+\textbf{Transparency:} The Streamlit interface shows top-5 class probabilities rather than a single hard prediction, giving users a sense of the model's desicion making. For the yield model, feature importance plots (saved to \texttt{results/}) make the model's reasoning inspectable.
 
-\textbf{Environmental impact:} ResNet-18 is a relatively lightweight architecture. Training on a single GPU for 10 epochs on 54,000 images takes approximately 30–60 minutes—negligible energy use compared to large foundation models. The XGBoost model is CPU-bound and trains in under a minute.
+\textbf{Environmental impact:} ResNet-18 is a relatively lightweight architecture. Training on a single GPU for 10 epochs on 54,000 images takes approximately 10-20 min. The XGBoost model is CPU-bound and trains in under a minute.
 
-\textbf{Misuse risk:} Overconfident disease predictions could lead a farmer to apply unnecessary pesticides, causing environmental harm. The UI is designed to communicate uncertainty explicitly to discourage overreliance on model outputs.
+\textbf{Misuse risk:} Overconfident disease predictions could cause a farmer to implement the wrong mitigation technique or address the situation inappropriately. The UI is designed to communicate uncertainty to discourage overreliance on the model not being robust enough.
 
 \vspace{1em}
 \hrule
