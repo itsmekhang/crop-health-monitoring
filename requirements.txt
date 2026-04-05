@@ -9,7 +9,6 @@ torchvision
 pillow
 opencv-python
 streamlit
-xgboost
 seaborn
 kaggle
 datasets

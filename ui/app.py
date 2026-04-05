@@ -1,18 +1,16 @@
 """
 Streamlit dashboard — Multimodal Crop Health Monitor
-Inputs: leaf images + field conditions sliders + farmer CSV
-Output: disease diagnosis + yield impact + combined risk report
+Inputs: leaf images + field conditions sliders + field size / price
+Output: disease diagnosis + environmental risk + estimated revenue loss
 """
 
 import sys
-import pickle
 import streamlit as st
 import torch
 import torch.nn as nn
 from torchvision import transforms, models
 from pathlib import Path
 from PIL import Image
-import pandas as pd
 import numpy as np
 
 sys.path.append(str(Path(__file__).parent.parent))
@@ -20,14 +18,24 @@ from src.recommendations import RECOMMENDATIONS, SEVERITY_COLOR
 from src.fusion import assess_risk
 
 DISEASE_MODEL = Path("results/disease_model.pth")
-YIELD_MODEL   = Path("results/yield_model.pkl")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-REQUIRED_CSV_COLS = {"Crop_Type", "Soil_Type", "pH", "N", "P", "K",
-                     "Irrigation_Frequency", "Fertilizer_Type", "Pesticide_Usage"}
+# Typical yields (kg/ha) based on global averages for crops the model covers
+TYPICAL_YIELD_KG_HA = {"Tomato": 40_000, "Potato": 20_000, "Pepper": 15_000}
+DEFAULT_PRICE_PER_KG = {"Tomato": 0.50, "Potato": 0.25, "Pepper": 1.20}
 
-# Yield penalty per severity (how much disease reduces expected yield)
+# Disease severity → fraction of yield lost
 YIELD_PENALTY = {"None": 0.0, "Moderate": 0.20, "High": 0.35, "Critical": 0.60}
+
+
+def _crop_family(label: str) -> str:
+    if label.lower().startswith("tomato"):
+        return "Tomato"
+    if label.lower().startswith("potato"):
+        return "Potato"
+    if label.lower().startswith("pepper"):
+        return "Pepper"
+    return "Tomato"  # fallback
 
 
 @st.cache_resource
@@ -44,14 +52,6 @@ def load_disease_model():
     return model, classes
 
 
-@st.cache_resource
-def load_yield_model():
-    if not YIELD_MODEL.exists():
-        return None
-    with open(YIELD_MODEL, "rb") as f:
-        return pickle.load(f)
-
-
 def predict_disease(model, classes, img: Image.Image):
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
@@ -61,45 +61,26 @@ def predict_disease(model, classes, img: Image.Image):
     tensor = transform(img).unsqueeze(0).to(DEVICE)
     with torch.no_grad():
         probs = torch.softmax(model(tensor), dim=1)[0].cpu().numpy()
-    top_idx  = probs.argsort()[::-1][:5]
+    top_idx = probs.argsort()[::-1][:5]
     return [classes[i] for i in top_idx], [float(probs[i]) for i in top_idx]
 
 
-def predict_yield(bundle, row, temp, humidity, rainfall):
-    model    = bundle["model"]
-    encoders = bundle["encoders"]
-    features = bundle["features"]
-
-    record = {
-        "Temperature": temp,
-        "Humidity": humidity,
-        "Rainfall": rainfall,
-        "pH": row.get("pH", 6.5),
-        "N": row.get("N", 100.0),
-        "P": row.get("P", 50.0),
-        "K": row.get("K", 150.0),
-        "Irrigation_Frequency": row.get("Irrigation_Frequency", 5),
-    }
-    for col in ["Crop_Type", "Soil_Type", "Fertilizer_Type", "Pesticide_Usage"]:
-        le = encoders.get(col)
-        val = str(row.get(col, ""))
-        try:
-            record[f"{col}_enc"] = le.transform([val])[0]
-        except (ValueError, AttributeError):
-            record[f"{col}_enc"] = 0
-
-    X = pd.DataFrame([record])[features]
-    return float(model.predict(X)[0])
+def estimate_loss(crop: str, severity: str, field_ha: float, price_per_kg: float):
+    typical  = TYPICAL_YIELD_KG_HA.get(crop, 20_000)
+    penalty  = YIELD_PENALTY.get(severity, 0.0)
+    lost_kg  = typical * penalty * field_ha
+    lost_usd = lost_kg * price_per_kg
+    return typical, penalty, lost_kg, lost_usd
 
 
-# ── Page config ──────────────────────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Crop Health Monitor", page_icon="🌿", layout="wide")
 st.title("Multimodal Crop Health Monitor")
-st.caption("Leaf images + field conditions + farm CSV → disease diagnosis, yield impact, and risk report.")
+st.caption("Leaf images + field conditions → disease diagnosis, environmental risk, and estimated revenue loss.")
 
 st.divider()
 
-# ── Inputs row ───────────────────────────────────────────────────────────────
+# ── Inputs row ────────────────────────────────────────────────────────────────
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -125,33 +106,13 @@ with col2:
         st.success("Conditions are moderate")
 
 with col3:
-    st.subheader("3. Farm Data CSV")
-    st.caption("Your field records — used for yield prediction.")
-
-    sample_csv = pd.DataFrame([{
-        "Crop_Type": "Maize",
-        "Soil_Type": "Loamy",
-        "pH": 6.5,
-        "N": 120.0,
-        "P": 60.0,
-        "K": 180.0,
-        "Irrigation_Frequency": 5,
-        "Fertilizer_Type": "Chemical",
-        "Pesticide_Usage": "Low",
-    }])
-    st.download_button("Download CSV Template", sample_csv.to_csv(index=False),
-                       "field_data_template.csv", "text/csv")
-
-    uploaded_csv = st.file_uploader("Upload your field data (.csv)", type=["csv"])
-    field_df = None
-    if uploaded_csv:
-        field_df = pd.read_csv(uploaded_csv)
-        missing = REQUIRED_CSV_COLS - set(field_df.columns)
-        if missing:
-            st.error(f"Missing columns: {missing}")
-            field_df = None
-        else:
-            st.dataframe(field_df, use_container_width=True)
+    st.subheader("3. Economic Impact")
+    st.caption("Used to estimate revenue loss from disease.")
+    field_ha     = st.number_input("Field size (hectares)", min_value=0.1, max_value=10_000.0,
+                                   value=1.0, step=0.5)
+    price_per_kg = st.number_input("Crop price (USD per kg)", min_value=0.01, max_value=100.0,
+                                   value=0.50, step=0.05,
+                                   help="Tomato ≈ $0.50 · Potato ≈ $0.25 · Pepper ≈ $1.20")
 
 st.divider()
 
@@ -160,49 +121,41 @@ if not uploaded_files:
     st.stop()
 
 disease_model, classes = load_disease_model()
-yield_bundle = load_yield_model()
 
 if disease_model is None:
     st.error("Disease model not found at `results/disease_model.pth`.")
     st.stop()
 
-# ── Run predictions ──────────────────────────────────────────────────────────
+# ── Run predictions ───────────────────────────────────────────────────────────
 results = []
-for i, f in enumerate(uploaded_files):
+for f in uploaded_files:
     img = Image.open(f).convert("RGB")
     top_cls, top_conf = predict_disease(disease_model, classes, img)
     label, confidence = top_cls[0], top_conf[0]
     rec      = RECOMMENDATIONS.get(label, {})
     severity = rec.get("severity", "Moderate")
     risk     = assess_risk(label, confidence, severity, temp, humidity, days_since_rain)
-
-    # Yield prediction — use matching CSV row if available, else first row
-    baseline_yield, adjusted_yield = None, None
-    csv_row = None
-    if field_df is not None:
-        csv_row = field_df.iloc[i] if i < len(field_df) else field_df.iloc[0]
-        if yield_bundle:
-            # days_since_rain → approximate mm by scaling (0d=200mm, 30d=0mm)
-            approx_rainfall = max(0, 200 - days_since_rain * 6.5)
-            baseline_yield  = predict_yield(yield_bundle, csv_row, temp, humidity, approx_rainfall)
-            penalty         = YIELD_PENALTY.get(severity, 0.2)
-            adjusted_yield  = baseline_yield * (1 - penalty)
+    crop     = _crop_family(label)
+    typical, penalty, lost_kg, lost_usd = estimate_loss(crop, severity, field_ha, price_per_kg)
 
     results.append({
         "filename": f.name, "img": img,
         "label": label, "confidence": confidence,
         "top_cls": top_cls, "top_conf": top_conf,
         "rec": rec, "severity": severity, "risk": risk,
-        "baseline_yield": baseline_yield,
-        "adjusted_yield": adjusted_yield,
-        "csv_row": csv_row,
+        "crop": crop,
+        "typical_kg_ha": typical,
+        "penalty": penalty,
+        "lost_kg": lost_kg,
+        "lost_usd": lost_usd,
     })
 
-# ── Field Health Overview ────────────────────────────────────────────────────
+# ── Field Health Overview ─────────────────────────────────────────────────────
 n_healthy  = sum(1 for r in results if "healthy" in r["label"].lower())
 n_total    = len(results)
 health_pct = n_healthy / n_total * 100
 avg_risk   = np.mean([r["risk"]["risk_score"] for r in results])
+total_loss = sum(r["lost_usd"] for r in results if "healthy" not in r["label"].lower())
 
 st.subheader("Field Health Overview")
 c1, c2, c3, c4 = st.columns(4)
@@ -222,7 +175,7 @@ else:
 
 st.divider()
 
-# ── Per-plant results ────────────────────────────────────────────────────────
+# ── Per-plant results ─────────────────────────────────────────────────────────
 st.subheader("Plant-by-Plant Report")
 
 for r in results:
@@ -236,8 +189,7 @@ for r in results:
 
         with col_img:
             st.image(r["img"], use_container_width=True)
-            if r["csv_row"] is not None:
-                st.caption(f"Crop: {r['csv_row']['Item']} | Region: {r['csv_row']['Area']}")
+            st.caption(f"Detected crop: **{r['crop']}**")
 
         with col_diag:
             st.markdown("**Diagnosis**")
@@ -265,23 +217,18 @@ for r in results:
                 st.caption(risk["env_warning"])
             st.caption(f"Temp {temp}°C · Humidity {humidity}% · {days_since_rain}d dry")
 
-            # Yield impact
-            if r["baseline_yield"] is not None:
+            # Revenue loss estimate
+            if "healthy" not in r["label"].lower():
                 st.markdown("---")
-                st.markdown("**Yield Impact**")
-                penalty_pct = YIELD_PENALTY.get(r["severity"], 0) * 100
-                st.metric(
-                    "Baseline Yield",
-                    f"{r['baseline_yield']:.2f} t/ha",
-                )
-                st.metric(
-                    "Est. Yield with Disease",
-                    f"{r['adjusted_yield']:.2f} t/ha",
-                    f"-{penalty_pct:.0f}% from disease",
-                    delta_color="inverse",
-                )
-            elif field_df is None:
-                st.caption("Upload a farm CSV to see yield impact.")
+                st.markdown("**Estimated Revenue Loss**")
+                penalty_pct = r["penalty"] * 100
+                st.metric("Yield Loss", f"{r['lost_kg']:,.0f} kg",
+                          f"{penalty_pct:.0f}% of {r['typical_kg_ha']:,} kg/ha baseline")
+                st.metric("Revenue Loss", f"${r['lost_usd']:,.0f}",
+                          f"over {field_ha:.1f} ha at ${price_per_kg:.2f}/kg",
+                          delta_color="inverse")
+            else:
+                st.success("No yield loss expected.")
 
         with col_treat:
             st.markdown("**Treatment Plan**")
