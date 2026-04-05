@@ -16,6 +16,7 @@ import numpy as np
 sys.path.append(str(Path(__file__).parent.parent))
 from src.recommendations import RECOMMENDATIONS, SEVERITY_COLOR
 from src.fusion import assess_risk
+from src.multimodal_model import MultimodalCropNet
 
 DISEASE_MODEL = Path("results/disease_model.pth")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -43,24 +44,39 @@ def load_disease_model():
     if not DISEASE_MODEL.exists():
         return None, None
     checkpoint = torch.load(DISEASE_MODEL, map_location=DEVICE, weights_only=False)
-    classes = checkpoint["classes"]
-    model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, len(classes))
+    classes    = checkpoint["classes"]
+    model_type = checkpoint.get("model_type", "resnet18")
+
+    if model_type == "multimodal":
+        model = MultimodalCropNet(num_classes=len(classes), freeze_backbone=False)
+    else:
+        model = models.resnet18(weights=None)
+        model.fc = nn.Linear(model.fc.in_features, len(classes))
+
     model.load_state_dict(checkpoint["model_state"])
     model.to(DEVICE)
     model.eval()
-    return model, classes
+    return model, classes, model_type
 
 
-def predict_disease(model, classes, img: Image.Image):
+def predict_disease(model, classes, model_type, img: Image.Image,
+                    temp: float, humidity: float, days_since_rain: float):
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     tensor = transform(img).unsqueeze(0).to(DEVICE)
+
     with torch.no_grad():
-        probs = torch.softmax(model(tensor), dim=1)[0].cpu().numpy()
+        if model_type == "multimodal":
+            weather = torch.tensor([[temp, humidity, days_since_rain]],
+                                   dtype=torch.float32).to(DEVICE)
+            logits = model(tensor, weather)
+        else:
+            logits = model(tensor)
+        probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+
     top_idx = probs.argsort()[::-1][:5]
     return [classes[i] for i in top_idx], [float(probs[i]) for i in top_idx]
 
@@ -120,7 +136,7 @@ if not uploaded_files:
     st.info("Upload at least one leaf image to get started.")
     st.stop()
 
-disease_model, classes = load_disease_model()
+disease_model, classes, model_type = load_disease_model()
 
 if disease_model is None:
     st.error("Disease model not found at `results/disease_model.pth`.")
@@ -130,7 +146,8 @@ if disease_model is None:
 results = []
 for f in uploaded_files:
     img = Image.open(f).convert("RGB")
-    top_cls, top_conf = predict_disease(disease_model, classes, img)
+    top_cls, top_conf = predict_disease(disease_model, classes, model_type, img,
+                                        temp, humidity, days_since_rain)
     label, confidence = top_cls[0], top_conf[0]
     rec      = RECOMMENDATIONS.get(label, {})
     severity = rec.get("severity", "Moderate")
