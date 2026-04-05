@@ -11,4 +11,3 @@ opencv-python
 streamlit
 xgboost
 seaborn
-kaggle
