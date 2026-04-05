@@ -33,7 +33,7 @@
 % ── Title ──────────────────────────────────────────────────────────────────
 \begin{center}
   {\LARGE\bfseries Multimodal Crop Health Monitoring}\\[6pt]
-  {\large and Yield Prediction}\\[10pt]
+  {\large and Environmental Risk Assessment}\\[10pt]
   {\large Technical Blueprint Report}\\[6pt]
   {\normalsize Khang Phan \quad|\quad Spring 2026}\\[4pt]
   {\small \href{https://github.com/itsmekhang/crop-health-monitoring}{github.com/itsmekhang/crop-health-monitoring}}
@@ -46,7 +46,7 @@
 % ── Section 1 ──────────────────────────────────────────────────────────────
 \section{Problem Context and Project Summary}
 
-Agriculture faces increasing pressure to efficiently use water, pesticides, and fertilizers, yet most farmers still rely on manual observation or delayed testing—leading to late disease detection, wasted resources, and reduced yields. This project builds a budget-friendly, modular AI system that detects crop diseases from leaf images using a convolutional neural network and predicts crop yield from environmental tabular data using gradient-boosted trees. The two models operate independently but are surfaced together through a unified Streamlit dashboard, giving farmers or researchers an interactive tool that combines visual and environmental insights in one interface. The system is designed to be reproducible, scalable, and extensible for future multimodal fusion work.
+Agriculture faces increasing pressure to efficiently use water, pesticides, and fertilizers, yet most farmers still rely on manual observation or delayed testing—leading to late disease detection, wasted resources, and reduced yields. This project builds a budget-friendly, modular AI system that detects crop diseases from leaf images using a convolutional neural network and assesses environmental risk from live weather data using gradient-boosted trees. The two models operate independently but are surfaced together through a unified Streamlit dashboard, giving farmers or researchers an interactive tool that combines visual and environmental insights in one interface. The system is designed to be reproducible, scalable, and extensible for future multimodal fusion work.
 
 % ── Section 2 ──────────────────────────────────────────────────────────────
 \section{Dataset}
@@ -62,15 +62,15 @@ Agriculture faces increasing pressure to efficiently use water, pesticides, and 
   \item \textbf{Ethics:} Publicly available; no personal data; image collection was non-invasive
 \end{itemize}
 
-\subsection{Crop Yield Dataset (Tabular Regression)}
+\subsection{USDA NASS QuickStats (Yield Baselines)}
 \begin{itemize}
-  \item \textbf{Source:} \href{https://www.kaggle.com/datasets/patelris/crop-yield-prediction-dataset}{Kaggle — patelris/crop-yield-prediction-dataset}
-  \item \textbf{Type:} CSV tabular data — country, crop type, year, rainfall, pesticide use, temperature, yield
-  \item \textbf{Size:} $\approx$28,000 rows, 7 columns; spans 1990–2013 across $\approx$100 countries
-  \item \textbf{Access:} Kaggle API — \texttt{kaggle datasets download -d patelris/crop-yield-prediction-dataset}
-  \item \textbf{Preprocessing:} Label-encode categorical columns (Area, Item); drop missing rows ($<$2\%); scale numeric features with StandardScaler
-  \item \textbf{Challenges:} Temporal data may have distribution shift; pesticide units vary by country
-  \item \textbf{Ethics:} Aggregated FAO statistics; no individual-level data; fair use for research
+  \item \textbf{Source:} \href{https://quickstats.nass.usda.gov}{USDA National Agricultural Statistics Service — QuickStats API}
+  \item \textbf{Type:} REST API returning JSON — crop yield (CWT/acre), prices, and environmental statistics by state and year
+  \item \textbf{Crops:} Tomatoes, Potatoes, Bell Peppers — matching the disease model's crop coverage
+  \item \textbf{Access:} Free API key from \href{https://quickstats.nass.usda.gov/api}{quickstats.nass.usda.gov/api}; queried at app startup and cached weekly
+  \item \textbf{Usage:} National average yield (converted from CWT/acre to kg/ha) used as the healthy-crop baseline for revenue loss estimation
+  \item \textbf{Challenges:} US-specific data; yield figures reflect high-input irrigated farming and may overestimate baselines for smallholder contexts
+  \item \textbf{Ethics:} Publicly funded government data; open access; no personal or sensitive information
 \end{itemize}
 
 % ── Section 3 ──────────────────────────────────────────────────────────────
@@ -96,11 +96,11 @@ Agriculture faces increasing pressure to efficiently use water, pesticides, and 
 \node[bluebox,  right=of aug] (resnet) {ResNet-18\\(PyTorch)};
 \node[orangebox,right=of resnet] (dcls)  {Disease\\Classification};
 
-% Yield pipeline (bottom row)
-\node[greenbox, below=1.4cm of pv]   (csv)    {Crop Yield\\CSV};
-\node[greenbox, right=of csv] (feat)   {Feature Eng.\\+ Encoding};
+% Risk pipeline (bottom row)
+\node[greenbox, below=1.4cm of pv]   (csv)    {USDA NASS\\+ Open-Meteo};
+\node[greenbox, right=of csv] (feat)   {Weather\\Features};
 \node[bluebox,  right=of feat] (xgb)    {XGBoost\\Regressor};
-\node[orangebox,right=of xgb] (yreg)   {Yield\\Prediction};
+\node[orangebox,right=of xgb] (yreg)   {Risk\\Assessment};
 
 % Dashboard
 \node[graybox, right=1.6cm of dcls, yshift=-0.7cm] (ui) {Streamlit\\Dashboard};
@@ -131,17 +131,18 @@ Agriculture faces increasing pressure to efficiently use water, pesticides, and 
   \item \textbf{Target metric:} Validation accuracy $\geq$85\%
 \end{itemize}
 
-\subsection{Tabular Model — Yield Predictor}
+\subsection{Tabular Model — Environmental Risk Scorer}
 \begin{itemize}
-  \item \textbf{Baseline:} Random Forest Regressor (scikit-learn)
-  \item \textbf{Main model:} XGBoost Regressor (n\_estimators=200, max\_depth=6)
-  \item \textbf{Features:} country, crop type, year, rainfall (mm/yr), pesticides (tonnes), avg temperature
-  \item \textbf{Target:} Crop yield in hg/ha (regression)
-  \item \textbf{Target metric:} R² $\geq$0.80 on held-out test split
+  \item \textbf{Main model:} XGBoost Regressor (n\_estimators=300, max\_depth=5)
+  \item \textbf{Features:} temperature (°C), humidity (\%), days since rain, ResNet confidence, disease class (encoded)
+  \item \textbf{Target:} Risk score in $[0, 1]$ — derived from agronomic disease-weather relationships
+  \item \textbf{Weather source:} Open-Meteo API (free, no key required) — fetched live by location at inference
+  \item \textbf{Yield baseline:} USDA NASS QuickStats API — national average yield per crop (CWT/acre $\rightarrow$ kg/ha)
+  \item \textbf{Achieved metric:} Val R² = 0.998, Val MAE = 0.008 on held-out split
 \end{itemize}
 
 \subsection{Interface}
-The Streamlit dashboard (\texttt{ui/app.py}) provides two tabs. The disease tab accepts an uploaded image and returns the predicted class with a confidence bar chart. The yield tab accepts numeric inputs via sliders and dropdowns and returns the predicted yield. Models are cached on load to avoid reloading between interactions.
+The Streamlit dashboard (\texttt{ui/app.py}) accepts leaf images, a location name, and economic inputs (field size, crop price). Weather is fetched automatically from Open-Meteo using the location. The disease classifier runs on the uploaded images; XGBoost scores risk from the disease result and live weather. Outputs include disease class, confidence, risk level, treatment plan, and estimated revenue loss. Models are cached on load to avoid reloading between interactions.
 
 % ── Section 4 ──────────────────────────────────────────────────────────────
 \section{User Interface Plan}
@@ -151,10 +152,13 @@ The Streamlit dashboard (\texttt{ui/app.py}) provides two tabs. The disease tab 
 \begin{center}
 \begin{tabular}{@{}lll@{}}
 \toprule
-\textbf{Tab} & \textbf{User Input} & \textbf{Output Displayed} \\
+\textbf{Section} & \textbf{User Input} & \textbf{Output Displayed} \\
 \midrule
-Disease Detection & Upload leaf image (.jpg/.png) & Predicted disease class + confidence bar chart \\
-Yield Prediction  & Region, crop, year, rainfall, pesticides, temp & Predicted yield (hg/ha and t/ha) + advice text \\
+Leaf Images     & Upload one or more .jpg/.png photos & Disease class, confidence, top-5 predictions \\
+Weather         & City or region name & Live temp, humidity, days since rain (Open-Meteo) \\
+Economic Impact & Field size (ha), crop price (USD/kg) & Yield loss (kg), revenue loss (USD) \\
+\midrule
+\multicolumn{2}{l}{\textit{Combined output per image}} & Risk score, risk level, treatment plan \\
 \bottomrule
 \end{tabular}
 \end{center}
