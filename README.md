@@ -1,3 +1,4 @@
+<img width="1189" height="396" alt="download" src="https://github.com/user-attachments/assets/ef73153b-3059-4a57-a8b1-54f9a519f2f7" />
 # Multimodal Crop Health Monitor
 
 **Author:** Khang Phan | itsmekhang
