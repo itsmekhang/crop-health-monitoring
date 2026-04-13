@@ -9,6 +9,7 @@
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{enumitem}
+\usepackage{float}
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds}
 
@@ -49,20 +50,20 @@ Deliverable 1 established the project scope, planned architecture, and data sour
   \item ResNet-18 disease classifier trained and saved to \texttt{results/disease\_model.pth}
   \item XGBoost environmental risk model trained and saved to \texttt{results/risk\_model.pkl}
   \item Streamlit interface (\texttt{ui/app.py}) integrating both models with live weather
-  \item Per-class accuracy evaluation and confusion matrix added to the training notebook
-  \item Dataset scope confirmed: 39 disease/healthy classes across 14 crops; class imbalance documented
+  \item Accuracy evaluation per-class and confusion matrix visualization
+  \item Dataset scope confirmed: 39 disease/healthy classes across 14 crops; class imbalance recorded
   \item XGBoost framing revised: now explicitly described as a rule approximator with a derived target
 \end{itemize}
 
-\subsection{What Remains}
-The following improvements are planned before Deliverable 3: running the full per-class accuracy table against the trained model and reporting those numbers; testing the interface with real field photos to quantify the lab-to-field gap; and exploring whether fine-tuning deeper ResNet layers improves accuracy on minority classes.
+\subsection{The Remaining}
+The following improvements are planned before the next deliverable: running the full per-class accuracy table against the trained model and record those values; testing the prototype with real field photos to evaluate the lab-to-field gap; and exploring whether fine-tuning deeper ResNet layers can improve the accuracy on under-represented classes.
 
 % ── Section b ─────────────────────────────────────────────────────────────────
 \section{System Architecture and Pipeline}
 
-Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate independently and are combined only at the output stage. This is a deliberate design choice: it avoids the alignment problem of true multimodal fusion and keeps each component auditable.
+Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate independently and are combined only at the output stage. This is a deliberate design choice: it avoids the intergration complexity of true multimodal fusion and keeps each component independable.
 
-\begin{figure}[ht]
+\begin{figure}[H]
 \centering
 \scalebox{0.72}{%
 \begin{tikzpicture}[
@@ -100,22 +101,22 @@ Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate indepen
 \end{figure}
 
 \subsection{Model Roles}
-\textbf{ResNet-18} is the academic center of the project. It performs the primary classification task: given a leaf image, predict which of the 15 disease or healthy classes it belongs to. Weather does not enter this model -- a diseased leaf looks the same regardless of humidity.
+\textbf{ResNet-18} is the academic center of the project. It performs the main disease classification task: given a leaf image, predict which of the 15 disease or healthy classes it belongs to. Weather does not enter this model, a diseased leaf looks the same regardless of humidity.
 
-\textbf{XGBoost} is a decision-support layer. It takes the predicted disease class, the classifier confidence, and three weather features (temperature, humidity, days since rain) and outputs a risk score in $[0, 1]$. This score drives the urgency level and treatment recommendation displayed in the UI. The training target is derived from agronomic rules in \texttt{src/fusion.py}, not from field observations (see Section~\ref{sec:eval}).
+\textbf{XGBoost} is a decision-support layer. It takes the predicted disease class, the classifier confidence, and three weather features (temperature, humidity, days since rain) and outputs a risk score in $[0, 1]$. This score dictates the vulnerability level and treatment recommendation displayed in the UI. The training target is derived from logic-based rules in \texttt{src/fusion.py}, not from real-world observations (see Section~\ref{sec:eval}).
 
 % ── Section c ─────────────────────────────────────────────────────────────────
 \section{Model Implementation Details}
 
 \subsection{Disease Classifier -- ResNet-18}
 
-\textbf{Framework:} PyTorch 2.x with torchvision.
+\textbf{Framework:} PyTorch with torchvision.
 
 \textbf{Architecture:} ResNet-18 initialized with ImageNet weights. All convolutional layers are frozen; only the final fully connected layer is fine-tuned. The replacement head maps from 512 features to $C = 15$ classes.
 
 \textbf{Training setup:}
 \begin{itemize}[noitemsep]
-  \item Hardware: CPU (or CUDA if available)
+  \item Hardware: T4 GPU with high RAM enabled
   \item Epochs: 10
   \item Batch size: 32
   \item Optimizer: Adam, lr $= 10^{-3}$
@@ -123,19 +124,18 @@ Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate indepen
   \item Loss: CrossEntropyLoss
 \end{itemize}
 
-\textbf{Dataset split:} Two separate \texttt{ImageFolder} instances are constructed from \texttt{data/raw/PlantVillage} -- one with training augmentations, one with only normalization. A \texttt{Subset} object with a fixed random permutation (seed 42) assigns 80\% to training and 20\% to validation. Using two instances avoids the transform contamination that occurs when a single \texttt{ImageFolder} object has its \texttt{.transform} reassigned mid-training.
+\textbf{Dataset split:} Two separate \texttt{ImageFolder} datasets are constructed from \texttt{data/raw/PlantVillage} -- one with training augmentations, one with only normalization. A \texttt{Subset} object with a fixed random permutation splits 80\% to training and 20\% to validation. Using two separate datasets avoids the transform errors and problems that occurs when a single \texttt{ImageFolder} object has its \texttt{.transform} reassigned mid-training.
 
 \textbf{Augmentations:} Random horizontal flip, rotation $\pm 15^\circ$, color jitter (brightness/contrast $\pm 0.2$), then ImageNet normalization.
 
-\textbf{Reproducibility:} The training notebook (\texttt{notebooks/setup.ipynb}) runs end-to-end from dataset download to model save. All random seeds are fixed.
-
+\textbf{Reproducibility:} The training notebook runs end-to-end from dataset download to model save.
 \subsection{Environmental Risk Layer -- XGBoost}
 
-\textbf{Framework:} XGBoost 2.x with scikit-learn API.
+\textbf{Framework:} XGBoost with scikit-learn API.
 
 \textbf{Architecture:} XGBRegressor with 300 estimators, max\_depth $= 5$, learning rate $= 0.05$, subsample $= 0.8$, colsample\_bytree $= 0.8$.
 
-\textbf{Features:} temperature ($^\circ$C), humidity (\%), days since rain, classifier confidence, label-encoded disease class.
+\textbf{Features:} temperature ($^\circ$C), humidity (\%), days since rain, confidence, label-encoded disease class.
 
 \textbf{Target construction:} The training set is generated synthetically. For each disease class, 500 (disease, weather) samples are drawn from disease-specific weather distributions (e.g., fungal diseases are sampled with high humidity). The risk score label is then computed by the deterministic formula in \texttt{src/fusion.py}:
 \begin{equation}
@@ -144,17 +144,16 @@ Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate indepen
 \end{equation}
 where $b_\text{class}$ is a fixed per-class severity base, $c$ is classifier confidence, and $f_\text{env}$ is a weighted environmental score.
 
-This derivation is the key caveat for interpreting XGBoost performance (Section~\ref{sec:eval}).
+This derivation is the key answer for interpreting XGBoost performance (Section~\ref{sec:eval}).
 
 \subsection{Interface}
-The Streamlit dashboard (\texttt{ui/app.py}) accepts one or more leaf image files, a location string (geocoded via the Open-Meteo API), and economic inputs (field size in acres, crop price per lb). For each image, it runs the disease classifier, queries current weather for the entered location, passes both through the XGBoost risk layer, and displays: disease class and top-5 predictions with confidence bars, risk level and score, treatment plan and prevention notes, and estimated revenue loss based on USDA NASS yield baselines.
+The Streamlit dashboard (\texttt{ui/app.py}) takes one or more leaf images, a location text (via the Open-Meteo API), and economic inputs (field size in acres, crop price per lb). For each image, it executes the disease classifier, queries current weather for the entered location, passes both through the XGBoost risk layer, and displays: disease class and top-5 predictions with confidence metrics, risk level and score, treatment plan and prevention notes, and estimated revenue loss based on USDA NASS yield database.
 
 % ── Section d ─────────────────────────────────────────────────────────────────
 \section{Interface Prototype}
 
 \subsection{Inputs and Outputs}
-
-\begin{table}[ht]
+\begin{table}[H]
 \caption{Interface Input/Output Summary}
 \label{tab:interface}
 \centering
@@ -171,24 +170,23 @@ Economic & Acres, price/lb & Revenue loss estimate \\
 \end{tabular}
 \end{table}
 
-\subsection{Screenshots}
+\subsection{Limitations}
+The interface does not perform input validation on image quality (blurry or non-leaf photos will silently produce a confident but meaningless prediction). If no real location is entered, the application will go with default values. Revenue loss estimates are based on the US national average yields and are not specifically oriented to the user's region.
 
-\begin{figure}[ht]
+\subsection{Screenshots}
+\begin{figure}[H]
   \centering
   \includegraphics[width=\columnwidth]{screenshot_input.png}
   \caption{Input panel: image upload, live weather fetch, and economic inputs.}
   \label{fig:input}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\columnwidth]{screenshot_output.png}
   \caption{Per-plant report: disease diagnosis, risk score, treatment plan, and revenue loss estimate.}
   \label{fig:output}
 \end{figure}
-
-\subsection{Limitations}
-The interface does not perform input validation on image quality (blurry or non-leaf photos will silently produce a confident but meaningless prediction). Weather defaults to 24$^\circ$C / 70\% / 2 days if no location is entered. Revenue loss estimates use US national average yields and are not calibrated to the user's region.
 
 % ── Section e ─────────────────────────────────────────────────────────────────
 \section{Early Evaluation and Results}
@@ -197,7 +195,7 @@ The interface does not perform input validation on image quality (blurry or non-
 \subsection{Dataset Characteristics}
 \label{sec:data}
 
-\begin{table}[ht]
+\begin{table}[H]
 \caption{PlantVillage Crop Coverage (39-class full dataset)}
 \label{tab:classes}
 \centering
@@ -221,38 +219,70 @@ Others      & 6  & 1 disease, 5 healthy \\
 \end{tabular}
 \end{table}
 
-The full PlantVillage dataset covers 14 crop types across 39 classes ($\approx$54,000 images). Class imbalance remains significant: Tomato accounts for the majority of disease classes and images. Top-line validation accuracy overestimates practical performance on minority classes such as Blueberry, Raspberry, and Soybean, which have only healthy examples.
+The full PlantVillage dataset covers 14 crop types across 39 classes ($\approx$54,000 images). Class imbalance remains significant: Tomato accounts for the majority of disease classes and images. Validation accuracy overestimates practical performance on minority classes such as Blueberry, Raspberry, and Soybean, which have only healthy examples.
 
 \subsection{ResNet-18 Training Curves}
-Training is logged per epoch; loss and accuracy curves are saved to \texttt{results/disease\_training\_curves.png} when \texttt{setup.ipynb} is run. With only the FC layer trained (frozen backbone), the model converges quickly (typically within 3--5 epochs) but is capacity-limited by the frozen feature extractor. Fine-tuning deeper layers is identified as a future improvement.
+Training is recorded per epoch. Fig.~\ref{fig:train_loss} and Fig.~\ref{fig:train_acc} show the per-epoch loss and accuracy for training and validation splits. Fine-tuning deeper layers is identified as a future improvement.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{chart_1.png}
+  \caption{ResNet-18 training and validation loss per epoch. The model converges within 3--5 epochs under frozen-backbone transfer learning.}
+  \label{fig:train_loss}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{chart_2.png}
+  \caption{ResNet-18 training and validation accuracy per epoch. Validation accuracy plateaus as the frozen backbone limits representational capacity.}
+  \label{fig:train_acc}
+\end{figure}
 
 \subsection{Per-Class Accuracy}
-Per-class accuracy (computed in Section 9 of \texttt{setup.ipynb}) is the primary evaluation metric. The expected pattern is: majority Tomato classes (large sample sizes) achieve high accuracy; minority classes -- particularly \textit{Potato\_healthy} (304 images) and \textit{Tomato\_mosaic\_virus} (746 images) -- are expected to show lower and more variable accuracy. Any top-line val accuracy figure should be reported alongside this breakdown to avoid misrepresenting model quality. The confusion matrix (saved to \texttt{results/confusion\_matrix.png}) highlights which disease pairs the model most frequently conflates; preliminary analysis suggests visually similar fungal diseases (Early vs. Late blight, Bacterial spot vs. Septoria) will produce the most off-diagonal confusion.
+Per-class accuracy (calculated in  \texttt{setup.ipynb}) is the primary evaluation metric. Fig.~\ref{fig:perclass} shows the per-class breakdown; majority Tomato classes (large sample sizes) achieve high accuracy while minority classes -- specifically \textit{Potato\_healthy} and \textit{Tomato\_mosaic\_virus}, show lower and more ambiguous accuracy. Any top-line validation accuracy figure should be reported with this breakdown to avoid misrepresenting the model quality. Fig.~\ref{fig:confmat} shows the confusion matrix; preliminary analysis suggests visually similar fungal diseases (Early vs.\ Late blight, Bacterial spot vs.\ Septoria) produce the most off-diagonal confusion.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{chart_4.png}
+  \caption{Per-class validation accuracy across all 39 PlantVillage classes. Minority classes (low sample counts) show noticeably higher variance.}
+  \label{fig:perclass}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{chart_3.png}
+  \caption{Confusion matrix on the validation split. Off-diagonal clusters correspond to visually similar disease pairs (e.g., Early vs.\ Late blight).}
+  \label{fig:confmat}
+\end{figure}
 
 \subsection{XGBoost Risk Model -- Honest Interpretation}
 \label{sec:xgb}
 
-The XGBoost model achieves Val MAE $\approx 0.008$ and Val R$^2 \approx 0.998$. These numbers look impressive but \textbf{do not measure real-world validity}. The training target is the deterministic output of Equation~\ref{eq:risk} -- a formula defined entirely in code. XGBoost is learning to approximate that formula, not to generalize from field observations. This is confirmed by feature importances: \texttt{disease\_class} accounts for $\approx$67\% of importance because $b_\text{class}$ in Equation~\ref{eq:risk} is a fixed per-class lookup.
+The XGBoost model achieves Val MAE $\approx 0.0184$ and Val R$^2 \approx 0.9661$. These numbers look fantastic but \textbf{do not measure real-world validity}. The training target is the deterministic output of Equation~\ref{eq:risk} -- a formula defined entirely in code. XGBoost is learning to compute that formula, not to interpret from field observations. This is confirmed by the feature vs risk score shown in Fig.~\ref{fig:feat_imp}.
 
-The practical value of the XGBoost layer is that it packages the rule into a portable, interpolatable scorer that handles continuous weather inputs without explicit branching. It should be described as a rule approximator and evaluated on whether the agronomic rules it encodes are sensible -- not on R$^2$ alone.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\columnwidth]{chart_5.png}
+  \caption{XGBoost Feature vs Risk Score}
+  \label{fig:feat_imp}
+\end{figure}
+
+The practical value of the XGBoost layer is that it packages the rule into a compact, interpretable scorer that handles constant weather inputs without explicit branching. It should be described as a rule interpreter and evaluated on whether the pre-determined hard-coded rules are sensible, not on R$^2$ alone.
 
 % ── Section f ─────────────────────────────────────────────────────────────────
 \section{Challenges and Next Steps}
 
 \subsection{Technical Challenges}
-\textbf{Class imbalance.} The 21$\times$ ratio between the most and least frequent class degrades recall on minority classes. Options for Deliverable 3 include weighted sampling during training or class-weighted loss.
+\textbf{Data Distribution} The 21$\times$ ratio between the most and least frequent class degrades recall on minority classes. Options for the next deliverable include weighted sampling during training or class-weighted loss.
 
-\textbf{Lab-to-field generalization.} All PlantVillage images are photographed against uniform backgrounds under controlled lighting. Early informal tests with field photos show noticeably lower confidence. This gap must be quantified and reported explicitly.
+\textbf{Real-world samples.} All PlantVillage images are photographed using uniform backgrounds under controlled lighting. Early informal tests with field photos show noticeably lower confidence. This discrepancy must be accounted for and reported.
 
-\textbf{Model/data scope.} The saved \texttt{disease\_model.pth} was originally trained on the 39-class full PlantVillage dataset. The local repository and evaluation notebook target the 15-class subset. Retraining on the 15-class set is needed to ensure the evaluation and the deployed model are consistent.
+\textbf{Random split inflation.} PlantVillage contains near-duplicate images of the same leaf taken seconds apart. A random 80/20 split places near-duplicates in both train and validation sets, inflating reported accuracy. A plant-session or leaf-level split would provide a more reserved prediction.
 
-\textbf{Random split inflation.} PlantVillage contains near-duplicate images of the same leaf taken seconds apart. A random 80/20 split places near-duplicates in both train and validation sets, inflating reported accuracy. A plant-session or leaf-level split would provide a more conservative estimate.
-
-\textbf{XGBoost derived target.} As discussed in Section~\ref{sec:xgb}, the risk model's R$^2$ reflects formula reproduction, not predictive validity. The report and UI must be explicit about this.
+\textbf{XGBoost derived target.} As discussed in Section~\ref{sec:xgb}, the risk model's R$^2$ reflects formula reproduction, not predictive validity. The report and UI must be clear about this.
 
 \subsection{Next Steps}
 \begin{itemize}[noitemsep]
-  \item Retrain ResNet-18 on the 15-class local dataset and report per-class accuracy table
   \item Test the interface on real field photos; report the qualitative accuracy drop
   \item Explore weighted loss or oversampling for minority classes (Potato\_healthy)
   \item Consider fine-tuning the last ResNet block rather than only the FC layer
@@ -262,22 +292,21 @@ The practical value of the XGBoost layer is that it packages the rule into a por
 % ── Section g ─────────────────────────────────────────────────────────────────
 \section{Responsible AI Reflection}
 
-\textbf{Lab-to-field bias.} The most significant equity concern is geographic and environmental bias. PlantVillage images come from controlled laboratory settings. Farmers in regions with different soil backgrounds, mixed-intercrop canopies, or different lighting conditions -- the farmers most likely to benefit from low-cost AI tools -- may see the worst performance. This concern is not reserved for the discussion section; it must appear in how classifier results are interpreted and in any accuracy claim made about the system.
+\textbf{Lab-to-field bias.} The most significant concern is geographic and environmental bias. PlantVillage images come from controlled laboratory settings. Farmers in regions with different soil backgrounds or different lighting conditions may yield worst performance. This problem is not dedicated for the discussion section; it must appear in how classifier results are interpreted and in any accuracy claim made about the system.
 
-\textbf{Class imbalance and representation.} The dataset over-represents Tomato diseases (77.5\% of images). A system deployed to Potato or Pepper farmers will be less reliable than headline accuracy suggests. Per-class reporting is the minimum standard; separate deployment testing per crop is the honest standard.
+\textbf{Class imbalance and representation.} The dataset over-represents Tomato diseases (77.5\% of images). A system deployed to Potato or Pepper farmers will be less reliable than headline accuracy suggests. Per-class reporting is the minimum; separate deployment testing per crop is the realistic standard.
 
-\textbf{Transparency and over-reliance.} The interface displays top-5 probabilities and a confidence score to discourage binary trust. The XGBoost risk score is derived from coded rules -- not from independent field evidence -- and this is now stated explicitly in the interface's section header and in the training notebook. A farmer acting on a Critical risk alert should understand that the score is the output of an agronomic formula applied to a CNN prediction, not an empirically validated risk estimate.
+\textbf{Transparency and over-reliance.} The user interface outputs top-5 predictions and a confidence score to discourage binary trust. The XGBoost risk score is derived from logic-based coded rules, not from reported field observations, and this is now stated explicitly in the interface's header and in the training notebook. A farmer acting on a Critical risk alert should understand that the score is the output of an set formula applied to a CNN prediction, not an empirically validated risk estimate.
 
-\textbf{Misuse.} An incorrect Critical diagnosis could lead a farmer to apply unnecessary fungicide, incurring cost and environmental burden. The UI is designed to recommend professional verification for Critical and High risk levels. No automated action is taken; all outputs are advisory.
+\textbf{Misuse.} An incorrect Critical diagnosis could lead a farmer to take unnecessary mitigation actions, incurring cost and environmental burden. The UI is designed to recommend professional verification for Critical and High risk levels. No automated action is taken; all outputs are advisory.
 
-\textbf{Computational footprint.} ResNet-18 is a lightweight architecture. Training for 10 epochs on 41k images takes approximately 15--30 minutes on a single GPU. The XGBoost model trains in under one minute on CPU. The inference footprint is minimal and suitable for deployment on low-cost hardware.
+\textbf{Computational footprint.} ResNet-18 is a lightweight architecture. Training for 10 epochs on 41k images takes approximately 5--10 minutes on a single GPU. The XGBoost model trains in under one minute on CPU. The inference footprint is minimal and appropriate for deployment on low-cost hardware.
 
 % ── Footer ───────────────────────────────────────────────────────────────────
 \vspace{6pt}
 \noindent\rule{\columnwidth}{0.4pt}
 \begin{center}
   \small GitHub: \href{https://github.com/itsmekhang/crop-health-monitoring}{itsmekhang/crop-health-monitoring}
-  \quad $|$ \quad Khang Phan \quad $|$ \quad Spring 2026
 \end{center}
 
 \end{document}
