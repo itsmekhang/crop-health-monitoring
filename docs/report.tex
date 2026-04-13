@@ -64,6 +64,7 @@ Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate indepen
 
 \begin{figure}[ht]
 \centering
+\scalebox{0.72}{%
 \begin{tikzpicture}[
   node distance=0.55cm and 0.9cm,
   box/.style={draw, rounded corners=3pt, minimum width=1.9cm, minimum height=0.65cm,
@@ -93,7 +94,7 @@ Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate indepen
 \draw[arr] (dcls)--(ui);
 \draw[arr] (wx)--(wf); \draw[arr] (wf)--(xgb); \draw[arr] (xgb)--(risk);
 \draw[arr] (risk)--(ui);
-\end{tikzpicture}
+\end{tikzpicture}}%
 \caption{System pipeline. ResNet-18 processes the leaf image independently of weather; XGBoost combines the disease output with environmental features.}
 \label{fig:pipeline}
 \end{figure}
