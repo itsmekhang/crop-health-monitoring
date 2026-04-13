@@ -1,4 +1,4 @@
-<img width="1189" height="396" alt="download" src="https://github.com/user-attachments/assets/ef73153b-3059-4a57-a8b1-54f9a519f2f7" />
+
 # Multimodal Crop Health Monitor
 
 **Author:** Khang Phan | itsmekhang
@@ -90,7 +90,7 @@ streamlit run ui/app.py
 |---|---|---|---|
 | Disease classifier | ResNet-18 (frozen backbone, fine-tuned FC) | Leaf image | Disease class + confidence |
 | Risk scorer | XGBoost regressor | Disease class + temp + humidity + rainfall | Risk score 0–1 |
-
+<img width="1189" height="396" alt="download" src="https://github.com/user-attachments/assets/ef73153b-3059-4a57-a8b1-54f9a519f2f7" />
 ---
 
 ## Author
