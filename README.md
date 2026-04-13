@@ -109,7 +109,7 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 ## Current Results and Known Issues
 
 **What works:**
-- ResNet-18 classifies the 15 PlantVillage classes with high top-line accuracy on the lab validation set
+- ResNet-18 classifies 39 PlantVillage classes (14 crops) with high top-line accuracy on the lab validation set
 - XGBoost risk layer produces consistent scores; treatment recommendations are agronomically reasonable
 - Streamlit interface runs end-to-end: image upload → live weather → risk output → revenue estimate
 
