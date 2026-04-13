@@ -19,7 +19,7 @@
 
 \begin{document}
 
-\title{Multimodal Crop Health Monitoring:\\
+\title{Weather Intergrated Crop Health Monitoring:\\
 A Modular ResNet-18 + Rule-Based Risk Layer}
 
 \author{
@@ -33,14 +33,14 @@ A Modular ResNet-18 + Rule-Based Risk Layer}
 
 % ── Abstract ──────────────────────────────────────────────────────────────────
 \begin{abstract}
-This paper documents the first full implementation of a modular crop health system that combines an image-based disease classifier with a weather-informed risk layer. A ResNet-18 model fine-tuned on PlantVillage classifies leaf disease across 15 classes covering Tomato, Potato, and Pepper. An XGBoost model then approximates a rule-based risk formula using the disease output and live weather conditions from the Open-Meteo API. Both models are integrated into a Streamlit dashboard that provides real-time diagnosis, environmental risk assessment, and estimated revenue loss. This report documents the implementation decisions, an honest evaluation of both models, and the key challenges identified during this phase, particularly class imbalance, the lab-to-field generalization gap, and the derived nature of the XGBoost training target.
+This paper documents the first full implementation of a modular crop health system that combines an image-based disease classifier with a weather-informed risk layer. The model PlantVillage classifies leaf disease across 39 classes covering Tomato, Potato, and Pepper based on the Resnet-18 architecture. An XGBoost model then uses a rule-based risk formula using the disease output and live weather conditions from the Open-Meteo API. Both models are integrated into a Streamlit dashboard that provides real-time feedback, environmental risk assessment, and estimated revenue loss. This report outlines the implementation executions, an honest evaluation of both models, and the main challenges faced during this particular phase, specifically class imbalance, the lab-to-field generalization gap, and the inherent nature of the XGBoost training target.
 \end{abstract}
 
 % ── Section a ─────────────────────────────────────────────────────────────────
 \section{Project Summary}
 
 \subsection{Purpose}
-Farmers still rely on manual disease scouting or delayed laboratory testing, leading to late intervention and unnecessary crop losses. This project builds a modular AI prototype that processes a leaf photograph and a location, and returns a disease diagnosis, an environmental risk score, a treatment plan, and an estimated revenue impact. The goal is a functioning, honest prototype -- not an overclaimed production system.
+Farmers still rely on slow and tedious manual disease scouting or delayed laboratory testing, leading to late mitigation and unnecessary crop losses. This project builds a modular AI prototype that processes a leaf photograph of a crop plant and a location, and returns a disease diagnosis, an environmental risk score, a treatment plan, and an estimated revenue impact. The goal is a functioning, realistic prototype.
 
 \subsection{Progress Since Deliverable 1}
 Deliverable 1 established the project scope, planned architecture, and data sources. Since then, the following has been completed:
@@ -198,29 +198,30 @@ The interface does not perform input validation on image quality (blurry or non-
 \label{sec:data}
 
 \begin{table}[ht]
-\caption{PlantVillage Class Distribution (local dataset)}
+\caption{PlantVillage Crop Coverage (39-class full dataset)}
 \label{tab:classes}
 \centering
-\begin{tabular}{@{}lrr@{}}
+\begin{tabular}{@{}llr@{}}
 \toprule
-\textbf{Class} & \textbf{Images} & \textbf{Val~(\%)} \\
+\textbf{Crop} & \textbf{Classes} & \textbf{Disease / Healthy} \\
 \midrule
-Tomato\_YellowLeaf\_Curl\_Virus & 6{,}416 & 15.5 \\
-Tomato\_Bacterial\_spot         & 4{,}254 & 10.3 \\
-Tomato\_Late\_blight             & 3{,}817 & 9.2 \\
-Tomato\_Septoria\_leaf\_spot    & 3{,}542 & 8.6 \\
-Tomato\_Spider\_mites           & 3{,}352 & 8.1 \\
-Tomato\_healthy                  & 3{,}182 & 7.7 \\
-Pepper\_Bacterial\_spot         & 1{,}994 & 4.8 \\
-Tomato\_mosaic\_virus           &   746 & 1.8 \\
-Potato\_healthy                  &   304 & 0.7 \\
+Tomato      & 10 & 9 disease, 1 healthy \\
+Apple       & 4  & 3 disease, 1 healthy \\
+Grape       & 4  & 3 disease, 1 healthy \\
+Corn        & 4  & 3 disease, 1 healthy \\
+Potato      & 3  & 2 disease, 1 healthy \\
+Pepper      & 2  & 1 disease, 1 healthy \\
+Cherry      & 2  & 1 disease, 1 healthy \\
+Peach       & 2  & 1 disease, 1 healthy \\
+Strawberry  & 2  & 1 disease, 1 healthy \\
+Others      & 6  & 1 disease, 5 healthy \\
 \midrule
-\textbf{Total (15 classes)}     & \textbf{41{,}274} & -- \\
+\textbf{Total} & \textbf{39} & \textbf{26 disease, 13 healthy} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The dataset is strongly imbalanced: the most frequent class (\textit{Tomato\_YellowLeaf\_Curl\_Virus}, 6{,}416 images) has 21$\times$ more samples than the least frequent (\textit{Potato\_healthy}, 304 images). Tomato accounts for 77.5\% of all images; Pepper and Potato account for 12.0\% and 10.4\%, respectively. Top-line validation accuracy therefore overestimates practical performance on minority classes.
+The full PlantVillage dataset covers 14 crop types across 39 classes ($\approx$54,000 images). Class imbalance remains significant: Tomato accounts for the majority of disease classes and images. Top-line validation accuracy overestimates practical performance on minority classes such as Blueberry, Raspberry, and Soybean, which have only healthy examples.
 
 \subsection{ResNet-18 Training Curves}
 Training is logged per epoch; loss and accuracy curves are saved to \texttt{results/disease\_training\_curves.png} when \texttt{setup.ipynb} is run. With only the FC layer trained (frozen backbone), the model converges quickly (typically within 3--5 epochs) but is capacity-limited by the frozen feature extractor. Fine-tuning deeper layers is identified as a future improvement.

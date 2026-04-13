@@ -14,9 +14,27 @@ DISEASE_CONDITIONS = {
     # Fungal diseases — thrive in warm + humid + wet
     "fungal": {
         "classes": [
+            # Tomato (old naming via CLASS_NAME_MAP)
             "Tomato_Early_blight", "Tomato_Late_blight", "Tomato_Leaf_Mold",
             "Tomato_Septoria_leaf_spot", "Tomato__Target_Spot",
+            # Tomato (new triple-underscore naming)
+            "Tomato___Early_blight", "Tomato___Late_blight", "Tomato___Leaf_Mold",
+            "Tomato___Septoria_leaf_spot", "Tomato___Target_Spot",
+            # Potato
             "Potato___Early_blight", "Potato___Late_blight",
+            # Apple
+            "Apple___Apple_scab", "Apple___Black_rot", "Apple___Cedar_apple_rust",
+            # Cherry
+            "Cherry_(including_sour)___Powdery_mildew",
+            # Corn
+            "Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot",
+            "Corn_(maize)___Common_rust_",
+            "Corn_(maize)___Northern_Leaf_Blight",
+            # Grape
+            "Grape___Black_rot", "Grape___Esca_(Black_Measles)",
+            "Grape___Leaf_blight_(Isariopsis_Leaf_Spot)",
+            # Squash / Strawberry
+            "Squash___Powdery_mildew", "Strawberry___Leaf_scorch",
         ],
         "risk_fn": lambda temp, humidity, days_since_rain: (
             _scale(humidity, 60, 90) * 0.5 +
@@ -28,7 +46,13 @@ DISEASE_CONDITIONS = {
     # Bacterial diseases — warm + wet + physical spread
     "bacterial": {
         "classes": [
+            # Tomato / Pepper (old naming)
             "Tomato_Bacterial_spot", "Pepper__bell___Bacterial_spot",
+            # Tomato / Pepper (new naming)
+            "Tomato___Bacterial_spot", "Pepper,_bell___Bacterial_spot",
+            # Peach / Orange
+            "Peach___Bacterial_spot",
+            "Orange___Haunglongbing_(Citrus_greening)",
         ],
         "risk_fn": lambda temp, humidity, days_since_rain: (
             _scale(humidity, 65, 95) * 0.4 +
@@ -38,11 +62,14 @@ DISEASE_CONDITIONS = {
         "warning": "Bacteria spread through water splash and humid conditions.",
     },
     # Viral diseases — spread by insect vectors (whiteflies, aphids)
-    # Insects are more active in warm, dry conditions
     "viral": {
         "classes": [
+            # Tomato (old naming)
             "Tomato__Tomato_YellowLeaf__Curl_Virus",
             "Tomato__Tomato_mosaic_virus",
+            # Tomato (new naming)
+            "Tomato___Tomato_Yellow_Leaf_Curl_Virus",
+            "Tomato___Tomato_mosaic_virus",
         ],
         "risk_fn": lambda temp, humidity, days_since_rain: (
             _scale(temp, 25, 38) * 0.6 +
@@ -54,6 +81,7 @@ DISEASE_CONDITIONS = {
     "mites": {
         "classes": [
             "Tomato_Spider_mites_Two_spotted_spider_mite",
+            "Tomato___Spider_mites Two-spotted_spider_mite",
         ],
         "risk_fn": lambda temp, humidity, days_since_rain: (
             _scale(temp, 28, 40) * 0.5 +
