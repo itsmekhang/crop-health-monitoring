@@ -99,7 +99,10 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 | Disease classifier | ResNet-18 (frozen backbone, fine-tuned FC) | Leaf image (lab) | Disease class + confidence |
 | Risk layer | XGBoost (rule approximator) | Disease class + temp + humidity + rainfall | Derived risk score 0–1 |
 
-<img width="1189" height="396" alt="download" src="https://github.com/user-attachments/assets/ef73153b-3059-4a57-a8b1-54f9a519f2f7" />
+<img width="1312" height="495" alt="download" src="https://github.com/user-attachments/assets/1e883cc4-6a03-477c-a27c-4707ad6b794a" />
+<img width="1490" height="396" alt="download" src="https://github.com/user-attachments/assets/fc059617-bb1b-4bb7-975e-2d48bde639e4" />
+<img width="1124" height="990" alt="download" src="https://github.com/user-attachments/assets/1a329477-5e31-4292-8dff-b8211465f13d" />
+<img width="1189" height="396" alt="download" src="https://github.com/user-attachments/assets/f81685e6-f69a-4b1a-a790-fd345e39cd06" />
 
 ---
 
