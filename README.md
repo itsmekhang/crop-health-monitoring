@@ -22,7 +22,7 @@ Location    →  Open-Meteo API  →  Temp, humidity, days since rain
 ```
 
 **Two independent models, one interface:**
-- **ResNet-18** — image-only disease classifier. 15 classes, 3 crops (Tomato, Potato, Pepper), ~41k lab images.
+- **ResNet-18** — image-only disease classifier. 39 disease/healthy classes across 14 crops, ~54k lab images.
 - **XGBoost** — decision-support risk layer. Approximates agronomic rules using disease type + weather. **Note:** training target is derived from coded rules, not observed field data — the high R² reflects formula reproduction, not real-world validity.
 
 ---
@@ -88,7 +88,7 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 | PlantVillage | [gabrieldgf4/PlantVillage-Dataset](https://github.com/gabrieldgf4/PlantVillage-Dataset) | ResNet-18 training |
 | Open-Meteo | [open-meteo.com](https://open-meteo.com) | Live weather at inference (free, no API key) |
 
-**Scope:** 15 classes, 3 crops, ~41,274 images. Class imbalance: 21× (Tomato\_YellowLeaf\_Curl\_Virus: 6,416 images vs Potato\_healthy: 304 images).
+**Scope:** 39 disease/healthy classes across 14 crops, ~54k lab images. Class imbalance present — Tomato dominates with 10 of the 39 classes.
 
 ---
 

@@ -1,6 +1,6 @@
 """
 Image-based crop disease classification using ResNet-18 (PyTorch + torchvision).
-Dataset: PlantVillage — 3 crops (Tomato, Potato, Pepper), 15 classes, ~41,000 images.
+Dataset: PlantVillage — 14 crops, 39 disease/healthy classes, ~54,000 images.
 All images are lab-controlled (uniform backgrounds). Field performance will differ.
 """
 

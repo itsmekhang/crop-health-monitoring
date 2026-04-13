@@ -50,7 +50,7 @@ Deliverable 1 established the project scope, planned architecture, and data sour
   \item XGBoost environmental risk model trained and saved to \texttt{results/risk\_model.pkl}
   \item Streamlit interface (\texttt{ui/app.py}) integrating both models with live weather
   \item Per-class accuracy evaluation and confusion matrix added to the training notebook
-  \item Dataset scope corrected from 38 to 15 classes; class imbalance (21$\times$) documented
+  \item Dataset scope confirmed: 39 disease/healthy classes across 14 crops; class imbalance documented
   \item XGBoost framing revised: now explicitly described as a rule approximator with a derived target
 \end{itemize}
 
@@ -76,7 +76,7 @@ Fig.~\ref{fig:pipeline} shows the full data flow. The two models operate indepen
   arr/.style={-{Stealth[scale=0.8]}, thick},
 ]
 % Image row
-\node[gbox] (pv)      {PlantVillage\\(15 classes)};
+\node[gbox] (pv)      {PlantVillage\\(39 classes)};
 \node[gbox, right=of pv]  (aug)   {Augment +\\Normalize};
 \node[bbox, right=of aug] (rn)    {ResNet-18\\(FC only)};
 \node[obox, right=of rn]  (dcls)  {Disease\\+ Conf.};
