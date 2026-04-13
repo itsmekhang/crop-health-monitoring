@@ -1,5 +1,5 @@
 
-# Multimodal Crop Health Monitor
+# Crop Health Monitor
 
 **Author:** Khang Phan | itsmekhang
 **Course Project** | Spring 2026
