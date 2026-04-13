@@ -1,6 +1,11 @@
 """
-Multimodal fusion: combines disease classification (image) +
-field conditions (tabular) into a unified risk score and recommendation.
+Environmental risk scoring: combines disease classification output with
+field conditions (temperature, humidity, days since rain) to produce a
+decision-support risk score.
+
+The risk score is derived from agronomic rules (see DISEASE_CONDITIONS and
+SEVERITY_BASE below), not learned from observed field data. XGBoost is used
+to approximate this formula at inference — not as a deeply trained multimodal model.
 """
 
 # Environmental conditions that amplify each disease

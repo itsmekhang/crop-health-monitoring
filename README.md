@@ -4,7 +4,7 @@
 **Author:** Khang Phan | itsmekhang
 **Course Project** | Spring 2026
 
-A multimodal AI system that detects crop diseases from leaf images and assesses environmental risk from live weather data — combining computer vision and machine learning for real-time field diagnosis.
+A modular crop health system with two components: a ResNet-18 disease classifier trained on PlantVillage leaf images, and a rule-based environmental risk layer that combines the classifier output with live weather conditions to produce actionable field guidance.
 
 ---
 
@@ -21,8 +21,8 @@ Location    →  Open-Meteo API     →  Temperature, humidity, days since rain
 
 Two separate models handle two separate modalities:
 
-- **ResNet-18** — image-only disease classifier trained on PlantVillage (38 classes, ~54k images)
-- **XGBoost** — environmental risk scorer trained on disease type + weather conditions
+- **ResNet-18** — image-only disease classifier trained on PlantVillage (15 classes, 3 crops, ~41k lab images)
+- **XGBoost** — decision-support risk layer: approximates agronomic rules using disease type + weather conditions (derived target, not observed field data)
 
 Weather is intentionally kept out of the image classifier — a diseased leaf looks the same regardless of humidity. Weather only influences how urgently to act, not what disease is present.
 
@@ -88,9 +88,11 @@ streamlit run ui/app.py
 
 | Model | Architecture | Input | Output |
 |---|---|---|---|
-| Disease classifier | ResNet-18 (frozen backbone, fine-tuned FC) | Leaf image | Disease class + confidence |
-| Risk scorer | XGBoost regressor | Disease class + temp + humidity + rainfall | Risk score 0–1 |
+| Disease classifier | ResNet-18 (frozen backbone, fine-tuned FC) | Leaf image (lab) | Disease class + confidence |
+| Risk layer | XGBoost (rule approximator) | Disease class + temp + humidity + rainfall | Derived risk score 0–1 |
+
 <img width="1189" height="396" alt="download" src="https://github.com/user-attachments/assets/ef73153b-3059-4a57-a8b1-54f9a519f2f7" />
+
 ---
 
 ## Author
