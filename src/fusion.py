@@ -12,6 +12,11 @@ to approximate this formula at inference — not as a deeply trained multimodal 
 # Keys map to disease class names
 DISEASE_CONDITIONS = {
     # Fungal diseases — thrive in warm + humid + wet
+    # Weight rationale: humidity is the primary sporulation trigger for most
+    # fungal pathogens (0.5); temperature sets a permissive range but is
+    # secondary (0.3); recent rainfall adds surface moisture but effect decays
+    # quickly once canopy dries (0.2). Consistent with Agrios (2005) and
+    # APS disease management guidelines for Late Blight and Early Blight.
     "fungal": {
         "classes": [
             # Tomato (old naming via CLASS_NAME_MAP)
@@ -44,6 +49,11 @@ DISEASE_CONDITIONS = {
         "warning": "Fungal diseases spread rapidly in humid, wet conditions.",
     },
     # Bacterial diseases — warm + wet + physical spread
+    # Weight rationale: temperature and humidity contribute roughly equally
+    # for bacterial pathogens (0.4 each) — warm temperatures accelerate
+    # cell division and humidity promotes leaf wetness needed for infection
+    # (Gitaitis & Walcott, 2007). Recent rainfall contributes less because
+    # bacteria can persist on dry surfaces between rain events (0.2).
     "bacterial": {
         "classes": [
             # Tomato / Pepper (old naming)
@@ -62,6 +72,11 @@ DISEASE_CONDITIONS = {
         "warning": "Bacteria spread through water splash and humid conditions.",
     },
     # Viral diseases — spread by insect vectors (whiteflies, aphids)
+    # Weight rationale: insect vector activity is primarily temperature-driven
+    # (0.6) — whitefly and aphid populations peak above 25 °C. Low humidity
+    # (dry_air term) further increases vector mobility and flight activity (0.4).
+    # Rainfall is excluded because it temporarily suppresses vector movement
+    # but does not affect the underlying viral spread mechanism.
     "viral": {
         "classes": [
             # Tomato (old naming)
@@ -78,6 +93,10 @@ DISEASE_CONDITIONS = {
         "warning": "Viral spread driven by insect vectors — more active in warm, dry weather.",
     },
     # Spider mites — hot and dry
+    # Weight rationale: spider mite reproduction rate roughly doubles for
+    # every 4 °C rise above 28 °C (Sabelis, 1985), and low humidity speeds
+    # desiccation of natural enemies. Both factors carry equal weight (0.5 each)
+    # because mite outbreaks require both conditions simultaneously.
     "mites": {
         "classes": [
             "Tomato_Spider_mites_Two_spotted_spider_mite",
@@ -165,6 +184,14 @@ def assess_risk(disease_class, confidence, severity, temp, humidity, days_since_
             risk_data = None  # fall through to formula
 
     # Fallback: hand-coded weighted formula
+    # Weight rationale:
+    #   base severity (0.4) — primary signal; reflects the agronomic classification
+    #     of how destructive the disease is regardless of conditions.
+    #   model confidence (0.3) — scales the diagnosis reliability; a 95%-confident
+    #     detection warrants a stronger response than a 55% one.
+    #   env_score (0.3) — modulates urgency based on spread conditions; environment
+    #     affects how fast the disease progresses, not the underlying pathology,
+    #     so it carries less weight than the diagnosis itself.
     if risk_data is None:
         base = SEVERITY_BASE.get(severity, 0.4)
         env_score = info["risk_fn"](temp, humidity, days_since_rain) if info else 0.5

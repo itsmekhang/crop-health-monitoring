@@ -31,11 +31,18 @@ def get_transforms(augment: bool = False):
     return transforms.Compose(base)
 
 
-def build_model(num_classes: int) -> nn.Module:
+def build_model(num_classes: int, unfreeze_last_block: bool = False) -> nn.Module:
     model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
-    # Freeze all layers except the final classifier
+    # Freeze all layers — backbone acts as a fixed ImageNet feature extractor
     for param in model.parameters():
         param.requires_grad = False
+    # Optionally unfreeze the last residual block (layer4) for domain adaptation.
+    # PlantVillage images differ substantially from ImageNet — unfreezing layer4
+    # lets the network adapt mid-level texture features toward disease-specific
+    # patterns without the cost or instability of full fine-tuning.
+    if unfreeze_last_block:
+        for param in model.layer4.parameters():
+            param.requires_grad = True
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     return model.to(DEVICE)
 
@@ -52,13 +59,22 @@ def load_datasets(data_dir: str):
     return train_loader, val_loader, full_ds.classes
 
 
-def train(data_dir: str, epochs: int = 10, save_path: str = "results/disease_model.pth"):
+def train(data_dir: str, epochs: int = 10, save_path: str = "results/disease_model.pth",
+          unfreeze_last_block: bool = False):
     train_loader, val_loader, classes = load_datasets(data_dir)
     print(f"Classes ({len(classes)}): {classes[:5]} ...")
 
-    model = build_model(num_classes=len(classes))
+    model = build_model(num_classes=len(classes), unfreeze_last_block=unfreeze_last_block)
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.fc.parameters(), lr=1e-3)
+    # When layer4 is unfrozen, use a lower lr for backbone params to avoid
+    # destroying pretrained features (differential learning rates).
+    if unfreeze_last_block:
+        optimizer = torch.optim.Adam([
+            {"params": model.layer4.parameters(), "lr": 1e-4},
+            {"params": model.fc.parameters(),     "lr": 1e-3},
+        ])
+    else:
+        optimizer = torch.optim.Adam(model.fc.parameters(), lr=1e-3)
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -83,16 +99,48 @@ def train(data_dir: str, epochs: int = 10, save_path: str = "results/disease_mod
     return model, classes
 
 
-def evaluate(model: nn.Module, loader: DataLoader) -> float:
+def evaluate(model: nn.Module, loader: DataLoader, classes=None):
+    """
+    Evaluate model on loader.
+
+    Args:
+        classes: if provided, returns a dict with overall accuracy and
+                 per-class precision, recall, F1, and support.
+                 If None, returns overall accuracy as a float (for use
+                 inside the training loop).
+    """
     model.eval()
-    correct, total = 0, 0
+    all_preds, all_labels = [], []
     with torch.no_grad():
         for images, labels in loader:
             images, labels = images.to(DEVICE), labels.to(DEVICE)
             preds = model(images).argmax(1)
-            correct += (preds == labels).sum().item()
-            total += labels.size(0)
-    return correct / total
+            all_preds.extend(preds.cpu().tolist())
+            all_labels.extend(labels.cpu().tolist())
+
+    accuracy = sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels)
+
+    if classes is None:
+        return accuracy
+
+    from sklearn.metrics import precision_recall_fscore_support
+    precision, recall, f1, support = precision_recall_fscore_support(
+        all_labels, all_preds,
+        labels=list(range(len(classes))),
+        zero_division=0,
+    )
+    return {
+        "accuracy": round(accuracy, 4),
+        "per_class": {
+            cls: {
+                "precision": round(float(p), 3),
+                "recall":    round(float(r), 3),
+                "f1":        round(float(f), 3),
+                "support":   int(s),
+            }
+            for cls, p, r, f, s in zip(classes, precision, recall, f1, support)
+        },
+    }
 
 
 def predict(image_path: str, model_path: str = "results/disease_model.pth") -> tuple[str, float]:
@@ -112,4 +160,7 @@ def predict(image_path: str, model_path: str = "results/disease_model.pth") -> t
 
 
 if __name__ == "__main__":
-    train(data_dir="data/raw/PlantVillage", epochs=10)
+    # Set unfreeze_last_block=True to fine-tune layer4 in addition to the FC head.
+    # Use this to test whether partially thawed backbone weights improve accuracy
+    # on PlantVillage vs. the frozen-backbone baseline.
+    train(data_dir="data/raw/PlantVillage", epochs=10, unfreeze_last_block=False)

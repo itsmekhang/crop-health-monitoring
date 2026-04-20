@@ -64,11 +64,34 @@ Keeping the models separate produces a cleaner, more interpretable system:
 - **Output:** Probability distribution over 38 disease classes
 - **Augmentation:** Random horizontal flip, rotation (±15°), color jitter
 
+**Frozen backbone note:** All convolutional weights are frozen and only the FC head is trained. This is a reasonable baseline given limited compute, but PlantVillage images (uniform backgrounds, controlled lighting) differ substantially from the ImageNet distribution the backbone was trained on. A next step is to unfreeze the last residual block (`layer4`) and fine-tune it at a lower learning rate (1e-4 vs. 1e-3 for the head). This allows the network to adapt mid-level texture representations toward disease-specific patterns without the instability of full fine-tuning.
+
 ### XGBoost Risk Scorer
 - **Input features:** temperature (°C), humidity (%), days since rain, ResNet confidence, disease class (encoded)
 - **Output:** Risk score in [0, 1]
 - **Training data:** Synthetic samples generated from agronomic disease-weather distributions (e.g. fungal diseases paired with high humidity, viral diseases with hot/dry conditions)
 - **Performance:** Val R² = 0.998, Val MAE = 0.008
+
+### Risk Formula Weight Justification
+
+The fallback risk formula combines three terms:
+
+```
+risk = (severity_base × 0.4) + (confidence × 0.3) + (env_score × 0.3)
+```
+
+- **severity_base (0.4):** The agronomic severity classification is the primary signal — it reflects how destructive the disease is independent of current conditions. It carries the largest weight.
+- **confidence (0.3):** A 95%-confident detection warrants a stronger response than a 55% one. Confidence scales the reliability of the diagnosis without overriding it.
+- **env_score (0.3):** Environmental conditions govern spread rate and urgency, not the underlying pathology. They modulate the recommendation but are weighted below the diagnosis itself.
+
+The per-disease environmental weights follow the same logic:
+
+| Disease type | Dominant factor | Weight rationale |
+|---|---|---|
+| Fungal | Humidity (0.5) | Humidity is the primary sporulation trigger (Agrios, 2005); temp sets a permissive range (0.3); recent rain adds surface moisture that decays quickly (0.2) |
+| Bacterial | Humidity = Temp (0.4 each) | Warm temperature and leaf wetness are roughly equally necessary for infection (Gitaitis & Walcott, 2007); rainfall is secondary (0.2) |
+| Viral | Temperature (0.6) | Insect vector activity (whiteflies, aphids) is primarily temperature-driven; low humidity increases vector mobility (0.4); rainfall excluded as it suppresses vectors transiently |
+| Mites | Temp = Dry air (0.5 each) | Spider mite reproduction doubles per 4 °C above 28 °C (Sabelis, 1985); both heat and low humidity are required simultaneously |
 
 ### Risk Levels
 | Score | Level | Action |
@@ -105,6 +128,7 @@ Field-level summary:
 ## 6. Limitations
 
 - **PlantVillage is a controlled dataset** — images were taken in lab/greenhouse conditions. Real field photos with dirt, overlapping leaves, or partial damage may perform worse.
+- **Location-image coupling is unverified** — the system assumes the uploaded photo was taken at the city the user enters. The entire risk score depends on this being true, but there is no verification. A user uploading a photo from one region while entering a different city will receive a risk score based on the wrong weather. This is an inherent limitation of the two-input design and should be made visible to the user at the point of entry.
 - **XGBoost trained on synthetic weather** — the risk model learned from agronomically-informed distributions rather than real field outbreak records. The correlations are scientifically grounded but not empirically validated.
 - **Revenue loss is approximate** — yield baselines (kg/ha) are global averages and will not reflect local farming conditions accurately.
 - **38 classes but limited crops** — the app provides treatment plans only for Tomato, Potato, and Pepper. Other classes are classified but show no recommendations.
