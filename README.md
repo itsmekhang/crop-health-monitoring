@@ -22,8 +22,8 @@ Location    →  Open-Meteo API  →  Temp, humidity, days since rain
 ```
 
 **Two independent models, one interface:**
-- **ResNet-18** — image-only disease classifier. 39 disease/healthy classes across 14 crops, ~54k lab images.
-- **XGBoost** — decision-support risk layer. Approximates agronomic rules using disease type + weather. **Note:** training target is derived from coded rules, not observed field data — the high R² reflects formula reproduction, not real-world validity.
+- **ResNet-18** — image-only disease classifier. 38 disease/healthy classes across 14 crops, ~54k lab images. Val accuracy: **0.955** (frozen backbone baseline).
+- **XGBoost** — decision-support risk layer. Approximates agronomic rules using disease type + weather. **Note:** training target is derived from coded rules, not observed field data — Val R² = 0.966 reflects formula reproduction only, not real-world validity.
 
 ---
 
@@ -32,10 +32,10 @@ Location    →  Open-Meteo API  →  Temp, humidity, days since rain
 ```
 crop-health-monitoring/
 ├── notebooks/
-│   └── setup.ipynb            # Dataset download, EDA, training, per-class evaluation
+│   └── setup.ipynb            # Dataset download, EDA, training, per-class eval, frozen vs unfrozen comparison
 ├── src/
-│   ├── disease_classifier.py  # ResNet-18 training script
-│   ├── fusion.py              # Environmental risk scoring (rule-based)
+│   ├── disease_classifier.py  # ResNet-18 training (frozen or layer4-unfrozen backbone)
+│   ├── fusion.py              # Environmental risk scoring with agronomic weight documentation
 │   ├── recommendations.py     # Treatment plans per disease class
 │   └── weather.py             # Open-Meteo API integration
 ├── ui/
@@ -67,9 +67,10 @@ Open `notebooks/setup.ipynb` and run all cells in order. This will:
 1. Check your environment
 2. Clone PlantVillage from GitHub into `data/raw/` — no Kaggle account needed
 3. Run EDA and plot class distribution
-4. Train ResNet-18 disease classifier → `results/disease_model.pth`
-5. Evaluate per-class accuracy and generate confusion matrix → `results/confusion_matrix.png`
+4. Train ResNet-18 (frozen backbone) → `results/disease_model.pth`
+5. Evaluate per-class precision, recall, F1, and generate confusion matrix → `results/confusion_matrix.png`
 6. Train XGBoost risk model → `results/risk_model.pkl`
+7. **(Section 8B)** Train unfrozen variant (`layer4` + FC) and plot frozen vs. unfrozen curves → `results/disease_model_unfrozen.pth`
 
 ### 2. Launch the dashboard
 
@@ -88,7 +89,7 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 | PlantVillage | [gabrieldgf4/PlantVillage-Dataset](https://github.com/gabrieldgf4/PlantVillage-Dataset) | ResNet-18 training |
 | Open-Meteo | [open-meteo.com](https://open-meteo.com) | Live weather at inference (free, no API key) |
 
-**Scope:** 39 disease/healthy classes across 14 crops, ~54k lab images. Class imbalance present — Tomato dominates with 10 of the 39 classes.
+**Scope:** 38 disease/healthy classes across 14 crops, ~54k lab images (one artifact class filtered). Class imbalance present — Tomato dominates with 10 of the 38 classes.
 
 ---
 
@@ -106,31 +107,39 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 
 ---
 
-## Current Results and Known Issues
+## Results
 
-**What works:**
-- ResNet-18 classifies 39 PlantVillage classes (14 crops) with high top-line accuracy on the lab validation set
-- XGBoost risk layer produces consistent scores; treatment recommendations are agronomically reasonable
-- Streamlit interface runs end-to-end: image upload → live weather → risk output → revenue estimate
+| Metric | Value |
+|---|---|
+| Val accuracy (frozen baseline) | **0.955** (38 classes, 10,861 val images) |
+| Lowest class accuracy | Corn Cercospora 0.705, Tomato Early blight 0.717 |
+| XGBoost Val R² | 0.966 (formula reproduction, not field validity) |
+| XGBoost Val MAE | 0.018 |
+| Trainable params (frozen) | 20,007 (FC head only) |
+| Trainable params (layer4 unfrozen) | ~2.1M |
 
-**Known issues and limitations:**
+Three classes fall below 80% accuracy — a finding obscured by the 95.5% top-line number. Per-class precision/recall/F1 breakdown is in the notebook.
+
+## Known Issues and Limitations
 
 | Issue | Detail |
 |---|---|
-| **Lab-to-field gap** | All PlantVillage images are staged on uniform backgrounds. Field photos with soil, shadows, and partial leaves will produce lower accuracy — this has not been formally quantified yet |
-| **Class imbalance (21×)** | Top-line accuracy is dominated by Tomato classes. Per-class accuracy (especially Potato\_healthy, ~304 images) is expected to be much lower |
-| **XGBoost target is derived** | The risk score is computed from a deterministic formula, not field observations. Val R² ≈ 0.998 reflects formula reproduction only — not real-world predictive validity |
-| **Random split inflation** | PlantVillage near-duplicates in both train/val likely inflate reported accuracy. A leaf-level split would be more conservative |
-| **Model/data scope mismatch** | The pre-trained `disease_model.pth` was originally fit on a 39-class dataset; retraining on the 15-class local subset is needed for a fully consistent evaluation |
+| **Lab-to-field gap** | All PlantVillage images are staged on uniform backgrounds. Field photos with soil, shadows, and partial occlusion will produce lower accuracy |
+| **Class imbalance** | Tomato dominates with 10 of 38 classes; small classes like Tomato mosaic virus (82 val samples) underperform |
+| **XGBoost target is derived** | Val R² = 0.966 measures how well XGBoost reproduces the hand-coded formula — not real-world predictive validity |
+| **Random split inflation** | PlantVillage near-duplicates in both train/val inflate reported accuracy relative to a leaf-stratified split |
+| **Location–image coupling** | The risk score assumes the uploaded photo was taken at the city the user enters — this is unverified |
 
 ---
 
 ## Reproducing Results
 
 After running `notebooks/setup.ipynb` in full, you will find in `results/`:
-- `disease_model.pth` — trained ResNet-18 weights and class list
+- `disease_model.pth` — trained ResNet-18 weights and class list (frozen baseline)
+- `disease_model_unfrozen.pth` — trained ResNet-18 with `layer4` unfrozen (Section 8B)
 - `risk_model.pkl` — trained XGBoost model, label encoder, feature list
 - `disease_training_curves.png` — loss/accuracy per epoch
+- `frozen_vs_unfrozen_comparison.png` — side-by-side training curves (Section 8B)
 - `confusion_matrix.png` — per-class confusion matrix
 - `eda_plantvillage.png` — class distribution bar chart
 - `xgb_risk_evaluation.png` — XGBoost predicted vs. derived target
