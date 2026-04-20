@@ -22,7 +22,7 @@ Location    →  Open-Meteo API  →  Temp, humidity, days since rain
 ```
 
 **Two independent models, one interface:**
-- **ResNet-18** — image-only disease classifier. 38 disease/healthy classes across 14 crops, ~54k lab images. Val accuracy: **0.955** (frozen backbone baseline).
+- **ResNet-18** — image-only disease classifier. 38 disease/healthy classes across 14 crops, ~54k lab images. Val accuracy: **0.955** (frozen backbone) / **0.996** (layer4 unfrozen, Section 8B).
 - **XGBoost** — decision-support risk layer. Approximates agronomic rules using disease type + weather. **Note:** training target is derived from coded rules, not observed field data — Val R² = 0.966 reflects formula reproduction only, not real-world validity.
 
 ---
@@ -109,16 +109,20 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 
 ## Results
 
+| Metric | Frozen baseline | layer4 unfrozen (Section 8B) |
+|---|---|---|
+| Val accuracy (epoch 10) | 0.955 | **0.996** (+4.1 pp) |
+| Train accuracy (epoch 10) | 0.951 | 0.999 |
+| Train loss (epoch 10) | 0.155 | 0.0047 |
+| Trainable params | 20,007 (FC only) | ~2.1M (layer4 + FC) |
+
 | Metric | Value |
 |---|---|
-| Val accuracy (frozen baseline) | **0.955** (38 classes, 10,861 val images) |
-| Lowest class accuracy | Corn Cercospora 0.705, Tomato Early blight 0.717 |
+| Lowest class accuracy (frozen) | Corn Cercospora 0.705, Tomato Early blight 0.717 |
 | XGBoost Val R² | 0.966 (formula reproduction, not field validity) |
 | XGBoost Val MAE | 0.018 |
-| Trainable params (frozen) | 20,007 (FC head only) |
-| Trainable params (layer4 unfrozen) | ~2.1M |
 
-Three classes fall below 80% accuracy — a finding obscured by the 95.5% top-line number. Per-class precision/recall/F1 breakdown is in the notebook.
+Three classes fall below 80% accuracy on the frozen baseline — a finding obscured by the 95.5% top-line number. Per-class precision/recall/F1 breakdown is in the notebook.
 
 ## Known Issues and Limitations
 
