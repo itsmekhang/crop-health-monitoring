@@ -117,6 +117,8 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 | Train loss (epoch 10) | 0.155 | 0.0047 |
 | Trainable params | 20,007 (FC only) | ~2.1M (layer4 + FC) |
 
+<img alt="Unfrozen Backbone Training Results" src="docs/unfrozen training result.png" />
+
 | Metric | Value |
 |---|---|
 | Lowest class accuracy (frozen, per-class eval) | Tomato mosaic virus 0.488, Tomato Early blight 0.620, Potato healthy 0.630 |
