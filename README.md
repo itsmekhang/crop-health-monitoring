@@ -22,7 +22,7 @@ Location    →  Open-Meteo API  →  Temp, humidity, days since rain
 ```
 
 **Two independent models, one interface:**
-- **ResNet-18** — image-only disease classifier. 38 disease/healthy classes across 14 crops, ~54k lab images. Val accuracy: **0.955** (frozen backbone) / **0.996** (layer4 unfrozen, Section 8B).
+- **ResNet-18** — image-only disease classifier. 38 disease/healthy classes across 14 crops, ~54k lab images. Val accuracy: **0.934** (frozen backbone, per-class eval) / **0.996** (layer4 unfrozen, Section 8B).
 - **XGBoost** — decision-support risk layer. Approximates agronomic rules using disease type + weather. **Note:** training target is derived from coded rules, not observed field data — Val R² = 0.966 reflects formula reproduction only, not real-world validity.
 
 ---
@@ -111,18 +111,19 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 
 | Metric | Frozen baseline | layer4 unfrozen (Section 8B) |
 |---|---|---|
-| Val accuracy (epoch 10) | 0.955 | **0.996** (+4.1 pp) |
+| Val accuracy (per-class eval) | **0.934** | **0.996** |
+| Val accuracy (in-loop) | 0.955 | 0.996 |
 | Train accuracy (epoch 10) | 0.951 | 0.999 |
 | Train loss (epoch 10) | 0.155 | 0.0047 |
 | Trainable params | 20,007 (FC only) | ~2.1M (layer4 + FC) |
 
 | Metric | Value |
 |---|---|
-| Lowest class accuracy (frozen) | Corn Cercospora 0.705, Tomato Early blight 0.717 |
+| Lowest class accuracy (frozen, per-class eval) | Tomato mosaic virus 0.488, Tomato Early blight 0.620, Potato healthy 0.630 |
 | XGBoost Val R² | 0.966 (formula reproduction, not field validity) |
 | XGBoost Val MAE | 0.018 |
 
-Three classes fall below 80% accuracy on the frozen baseline — a finding obscured by the 95.5% top-line number. Per-class precision/recall/F1 breakdown is in the notebook.
+Three classes fall below 70% accuracy on the frozen baseline. The per-class evaluation reports 0.934 vs the in-loop 0.955 — the gap reflects the augmentation bleed fix (D2 leaked augmented images into validation) and the artifact class (`x_Removed_from_Healthy_leaves`, 0/2 correct) being included in the evaluation set. Per-class precision/recall/F1 breakdown is in the notebook.
 
 ## Known Issues and Limitations
 
