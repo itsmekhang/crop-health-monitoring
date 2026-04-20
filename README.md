@@ -91,6 +91,8 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 
 **Scope:** 38 disease/healthy classes across 14 crops, ~54k lab images (one artifact class filtered). Class imbalance present — Tomato dominates with 10 of the 38 classes.
 
+<img alt="PlantVillage — top 15 classes by image count" src="docs/chart_1.png" />
+
 ---
 
 ## Models
@@ -100,10 +102,8 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 | Disease classifier | ResNet-18 (frozen backbone, fine-tuned FC) | Leaf image (lab) | Disease class + confidence |
 | Risk layer | XGBoost (rule approximator) | Disease class + temp + humidity + rainfall | Derived risk score 0–1 |
 
-<img width="1312" height="495" alt="download" src="https://github.com/user-attachments/assets/1e883cc4-6a03-477c-a27c-4707ad6b794a" />
-<img width="1490" height="396" alt="download" src="https://github.com/user-attachments/assets/fc059617-bb1b-4bb7-975e-2d48bde639e4" />
-<img width="1124" height="990" alt="download" src="https://github.com/user-attachments/assets/1a329477-5e31-4292-8dff-b8211465f13d" />
-<img width="1189" height="396" alt="download" src="https://github.com/user-attachments/assets/f81685e6-f69a-4b1a-a790-fd345e39cd06" />
+<img alt="Dashboard — leaf upload, weather fetch, and economic parameters" src="docs/screenshot_input.png" />
+<img alt="Dashboard — per-plant diagnosis, risk assessment, and treatment plan" src="docs/screenshot_output.png" />
 
 ---
 
@@ -117,7 +117,8 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 | Train loss (epoch 10) | 0.155 | 0.0047 |
 | Trainable params | 20,007 (FC only) | ~2.1M (layer4 + FC) |
 
-<img alt="Unfrozen Backbone Training Results" src="docs/unfrozen training result.png" />
+<img alt="ResNet-18 frozen baseline — training loss and accuracy curves" src="docs/chart_2.png" />
+<img alt="ResNet-18 layer4 unfrozen (Section 8B) — training loss and accuracy curves" src="docs/unfrozen_training.png" />
 
 | Metric | Value |
 |---|---|
@@ -126,6 +127,9 @@ Then open `http://localhost:8501` in your browser. Upload a leaf image, enter a 
 | XGBoost Val MAE | 0.018 |
 
 Three classes fall below 70% accuracy on the frozen baseline. The per-class evaluation reports 0.934 vs the in-loop 0.955 — the gap reflects the augmentation bleed fix (D2 leaked augmented images into validation) and the artifact class (`x_Removed_from_Healthy_leaves`, 0/2 correct) being included in the evaluation set. Per-class precision/recall/F1 breakdown is in the notebook.
+
+<img alt="Normalized confusion matrix — frozen baseline (38 classes)" src="docs/chart_3.png" />
+<img alt="XGBoost risk model — predicted vs. derived target (R²=0.966) and feature importance" src="docs/chart_4.png" />
 
 ## Known Issues and Limitations
 
