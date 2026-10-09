@@ -75,13 +75,13 @@ BORDER_MATCH_FRAC = 0.6  # share of border pixels that must look like the centre
 BORDER_MATCH_DE = 18.0   # Lab colour distance counted as "looks like the centre leaf"
 
 
-def _border_matches_centre(rgb: np.ndarray, core: np.ndarray, border: np.ndarray) -> bool:
-    """True if most of the image border has the same colour as the centre (leaf fills the frame)."""
+def _border_centre_match(rgb: np.ndarray, core: np.ndarray, border: np.ndarray) -> float:
+    """Share of border pixels with the same colour as the image centre (Lab distance < BORDER_MATCH_DE)."""
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
     lab[..., 0] *= 100 / 255                     # OpenCV 8-bit Lab → L in 0–100, a/b offset by 128
     centre = np.median(lab[core], axis=0)
     dist = np.linalg.norm(lab[border] - centre, axis=1)
-    return (dist < BORDER_MATCH_DE).mean() >= BORDER_MATCH_FRAC
+    return float((dist < BORDER_MATCH_DE).mean())
 
 
 def _fill_holes(mask: np.ndarray) -> np.ndarray:
@@ -118,16 +118,23 @@ def leaf_mask(img: Image.Image) -> tuple[np.ndarray, bool]:
 
     gc = np.full((h, w), cv2.GC_PR_BGD, np.uint8)
     plant_frac = plant.mean()
-    if 0.02 < plant_frac < 0.6:
+    border_match = _border_centre_match(rgb, core, border)
+    # A dull centre that fails the colour prior yet differs from the border is a leaf
+    # in shade or under mildew (dark, bluish or grey) — the prior would latch onto a
+    # bright stem instead, so fall through to the position prior. Vivid non-plant
+    # centres (red fruit, a cup) keep the colour prior, which finds the leaf beside them.
+    centre_sat = np.median(cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)[..., 1][core]) / 255
+    odd_coloured_leaf = plant[core].mean() < 0.3 and border_match < 0.3 and centre_sat < 0.3
+    if 0.02 < plant_frac < 0.6 and not odd_coloured_leaf:
         # Colour prior is informative (plain / non-plant background)
         gc[plant] = cv2.GC_PR_FGD
         gc[core & plant] = cv2.GC_FGD
         gc[border & ~plant] = cv2.GC_BGD
     else:
-        # Colour prior found nothing, or the whole frame looks like plant
-        # (foliage, soil, wooden table): rely on the photo being centred on
-        # the leaf and let GrabCut's colour model separate it from the rest.
-        if _border_matches_centre(rgb, core, border):
+        # Colour prior found nothing, the whole frame looks like plant (foliage,
+        # soil, wooden table), or the leaf itself is oddly coloured: rely on the
+        # photo being centred on the leaf and let GrabCut's colour model separate it.
+        if border_match >= BORDER_MATCH_FRAC:
             # The leaf (or look-alike foliage) runs off the frame: any cut would
             # carve an arbitrary blob out of it, so keep the whole image.
             return np.full((h0, w0), 255, np.uint8), False
