@@ -260,7 +260,9 @@ def segment_dataset(image_root: str, mask_root: str, workers: int | None = None)
     image_root, mask_root = Path(image_root), Path(mask_root)
     jobs = [(str(p), str(mask_path_for(p, image_root, mask_root)))
             for p in sorted(image_root.rglob("*"))
-            if p.suffix.lower() in IMG_EXTS and not any(part.startswith(".") for part in p.parts)]
+            if p.suffix.lower() in IMG_EXTS
+            # skip hidden folders (.git) inside the dataset — not in image_root's own path ("../data")
+            and not any(part.startswith(".") for part in p.relative_to(image_root).parts)]
     todo = [j for j in jobs if not Path(j[1]).exists()]
     print(f"{len(jobs):,} images, {len(jobs) - len(todo):,} already done, {len(todo):,} to segment")
 
