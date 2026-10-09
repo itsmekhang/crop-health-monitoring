@@ -8,9 +8,9 @@ import sys
 import streamlit as st
 import torch
 import torch.nn as nn
-from torchvision import transforms, models
+from torchvision import models
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageOps
 import numpy as np
 
 sys.path.append(str(Path(__file__).parent.parent))
@@ -18,9 +18,11 @@ from src.recommendations import RECOMMENDATIONS, SEVERITY_COLOR
 from src.fusion import assess_risk
 from src.multimodal_model import MultimodalCropNet
 from src.weather import geocode, fetch_weather
+from src.disease_classifier import prepare_image
 
 DISEASE_MODEL = Path("results/disease_model.pth")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+LOW_CONFIDENCE = 0.5   # below this, ask for a better photo instead of trusting the label
 
 # Typical yields in lbs/acre (US averages)
 TYPICAL_YIELD_LBS_ACRE = {"Tomato": 35_700, "Potato": 41_000, "Pepper": 13_400}
@@ -72,10 +74,12 @@ def _crop_family(label: str) -> str:
 @st.cache_resource
 def load_disease_model():
     if not DISEASE_MODEL.exists():
-        return None, None, None
+        return None, None, None, None
     checkpoint = torch.load(DISEASE_MODEL, map_location=DEVICE, weights_only=False)
     classes    = checkpoint["classes"]
     model_type = checkpoint.get("model_type", "resnet18")
+    # Must match training: "leaf_cutout" checkpoints expect a segmented leaf on black
+    preprocess = checkpoint.get("preprocess", "resize")
 
     if model_type == "multimodal":
         model = MultimodalCropNet(num_classes=len(classes), freeze_backbone=False)
@@ -86,17 +90,12 @@ def load_disease_model():
     model.load_state_dict(checkpoint["model_state"])
     model.to(DEVICE)
     model.eval()
-    return model, classes, model_type
+    return model, classes, model_type, preprocess
 
 
-def predict_disease(model, classes, model_type, img: Image.Image,
+def predict_disease(model, classes, model_type, preprocess, img: Image.Image,
                     temp: float, humidity: float, days_since_rain: float):
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-    ])
-    tensor = transform(img).unsqueeze(0).to(DEVICE)
+    tensor, model_view = prepare_image(img, preprocess)
 
     with torch.no_grad():
         if model_type == "multimodal":
@@ -112,7 +111,7 @@ def predict_disease(model, classes, model_type, img: Image.Image,
     valid_idx = [i for i, c in enumerate(classes) if c not in IGNORE]
     valid_probs = [(probs[i], i) for i in valid_idx]
     top = sorted(valid_probs, reverse=True)[:5]
-    return [classes[i] for _, i in top], [float(p) for p, _ in top]
+    return [classes[i] for _, i in top], [float(p) for p, _ in top], model_view
 
 
 def estimate_loss(crop: str, severity: str, field_acres: float, price_per_lb: float):
@@ -191,7 +190,7 @@ if not uploaded_files:
     st.info("Upload at least one leaf image to get started.")
     st.stop()
 
-disease_model, classes, model_type = load_disease_model()
+disease_model, classes, model_type, preprocess = load_disease_model()
 
 if disease_model is None:
     st.error("Disease model not found at `results/disease_model.pth`.")
@@ -200,9 +199,10 @@ if disease_model is None:
 # ── Run predictions ───────────────────────────────────────────────────────────
 results = []
 for f in uploaded_files:
-    img = Image.open(f).convert("RGB")
-    top_cls, top_conf = predict_disease(disease_model, classes, model_type, img,
-                                        temp, humidity, days_since_rain)
+    img = ImageOps.exif_transpose(Image.open(f)).convert("RGB")
+    top_cls, top_conf, model_view = predict_disease(disease_model, classes, model_type,
+                                                    preprocess, img, temp, humidity,
+                                                    days_since_rain)
     label, confidence = _normalize_class(top_cls[0]), top_conf[0]
     top_cls = [_normalize_class(c) for c in top_cls]
     rec      = RECOMMENDATIONS.get(label, {})
@@ -212,7 +212,7 @@ for f in uploaded_files:
     typical, penalty, lost_lbs, lost_usd = estimate_loss(crop, severity, field_acres, price_per_lb)
 
     results.append({
-        "filename": f.name, "img": img,
+        "filename": f.name, "img": img, "model_view": model_view,
         "label": label, "confidence": confidence,
         "top_cls": top_cls, "top_conf": top_conf,
         "rec": rec, "severity": severity, "risk": risk,
@@ -262,6 +262,9 @@ for r in results:
 
         with col_img:
             st.image(r["img"], use_container_width=True)
+            if preprocess == "leaf_cutout":
+                st.image(r["model_view"], caption="Leaf cutout the model sees",
+                         use_container_width=True)
 
         with col_diag:
             st.markdown("**Diagnosis**")
@@ -274,6 +277,9 @@ for r in results:
 
             st.markdown(f"Severity: **:{SEVERITY_COLOR.get(r['severity'],'gray')}[{r['severity']}]**")
             st.markdown(f"Confidence: **{r['confidence']:.1%}**")
+            if r["confidence"] < LOW_CONFIDENCE:
+                st.warning("Low confidence — this photo may be unlike the training data. "
+                           "Retake it with one leaf filling most of the frame, in even light.")
             st.caption(r["rec"].get("description", ""))
 
             st.markdown("**Top Predictions**")
