@@ -71,6 +71,19 @@ def _centre_ellipse(h: int, w: int, radius: float) -> np.ndarray:
     return ((yy - h / 2) / (h * radius)) ** 2 + ((xx - w / 2) / (w * radius)) ** 2 <= 1
 
 
+BORDER_MATCH_FRAC = 0.6  # share of border pixels that must look like the centre leaf
+BORDER_MATCH_DE = 18.0   # Lab colour distance counted as "looks like the centre leaf"
+
+
+def _border_matches_centre(rgb: np.ndarray, core: np.ndarray, border: np.ndarray) -> bool:
+    """True if most of the image border has the same colour as the centre (leaf fills the frame)."""
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab[..., 0] *= 100 / 255                     # OpenCV 8-bit Lab → L in 0–100, a/b offset by 128
+    centre = np.median(lab[core], axis=0)
+    dist = np.linalg.norm(lab[border] - centre, axis=1)
+    return (dist < BORDER_MATCH_DE).mean() >= BORDER_MATCH_FRAC
+
+
 def _fill_holes(mask: np.ndarray) -> np.ndarray:
     """Fill enclosed background regions (lesions, holes) inside the leaf."""
     h, w = mask.shape
@@ -114,11 +127,16 @@ def leaf_mask(img: Image.Image) -> tuple[np.ndarray, bool]:
         # Colour prior found nothing, or the whole frame looks like plant
         # (foliage, soil, wooden table): rely on the photo being centred on
         # the leaf and let GrabCut's colour model separate it from the rest.
+        if _border_matches_centre(rgb, core, border):
+            # The leaf (or look-alike foliage) runs off the frame: any cut would
+            # carve an arbitrary blob out of it, so keep the whole image.
+            return np.full((h0, w0), 255, np.uint8), False
         gc[_centre_ellipse(h, w, 0.40)] = cv2.GC_PR_FGD
         gc[core] = cv2.GC_FGD
         gc[border] = cv2.GC_BGD
 
     try:
+        cv2.setRNGSeed(0)   # GrabCut's GMM init is random — fix it so masks are reproducible
         bgd, fgd = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
         cv2.grabCut(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), gc, None, bgd, fgd,
                     GRABCUT_ITERS, cv2.GC_INIT_WITH_MASK)
