@@ -74,7 +74,8 @@ def plantdoc_images(plantdoc_dir: str, splits=("train", "test")):
 
 
 def evaluate_field(model_path: str, plantdoc_dir: str, splits=("train", "test"),
-                   preprocess: str | None = None, verbose: bool = True) -> dict:
+                   preprocess: str | None = None, verbose: bool = True,
+                   segmenter: str = "hybrid") -> dict:
     """
     Top-1 / top-3 accuracy on PlantDoc photos, predicting over all classes.
     "given crop" restricts the prediction to the true crop's classes — what you
@@ -96,7 +97,7 @@ def evaluate_field(model_path: str, plantdoc_dir: str, splits=("train", "test"),
             try:
                 im = Image.open(path)
                 im.draft("RGB", (1024, 1024))   # fast reduced-size JPEG decode; model input is 224px
-                tensor, _ = prepare_image(im, preprocess)
+                tensor, _ = prepare_image(im, preprocess, segmenter)
             except OSError:
                 continue
             probs = torch.softmax(model(tensor), 1)[0].cpu()
@@ -128,5 +129,7 @@ if __name__ == "__main__":
     ap.add_argument("--splits", nargs="+", default=["train", "test"])
     ap.add_argument("--preprocess", choices=["resize", "leaf_cutout"], default=None,
                     help="override the checkpoint's preprocessing")
+    ap.add_argument("--segmenter", choices=["hybrid", "grabcut"], default="hybrid",
+                    help="leaf segmentation for leaf_cutout models (hybrid = MobileSAM + GrabCut)")
     a = ap.parse_args()
-    evaluate_field(a.model_path, a.plantdoc_dir, a.splits, a.preprocess)
+    evaluate_field(a.model_path, a.plantdoc_dir, a.splits, a.preprocess, segmenter=a.segmenter)

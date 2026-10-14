@@ -7,7 +7,17 @@ do not exist in field photos (soil, grass, other leaves, hands). Cutting the
 leaf out — and, during training, pasting it onto random backgrounds — forces
 the model to look at the leaf itself.
 
-Algorithm (classical, no extra model weights):
+Two segmenters:
+  "grabcut" — classical, fast (~30 ms), no model weights. Very good on lab
+              photos with plain backgrounds; used for PlantVillage training masks.
+  "hybrid"  — MobileSAM (a small Segment Anything model) prompted with the photo's
+              centre, falling back to GrabCut when SAM's pick looks like soil or
+              background. Better on field photos (close-ups where the leaf fills the
+              frame, dark leaves, clutter); ~1.5 s/photo on CPU, fast on GPU. Used
+              for photos at inference. Needs `pip install timm` and the MobileSAM
+              package (see requirements.txt); weights (40 MB) download on first use.
+
+GrabCut algorithm:
   1. Colour prior — saturation + excess-green flag "plant-coloured" pixels.
      Lesion colours (yellow, brown, rust) are saturated; PlantVillage's
      grey/beige background is not.
@@ -30,15 +40,17 @@ Usage:
 
     # Single image:
     from src.segmentation import cut_out_leaf, composite
-    rgba, ok = cut_out_leaf(Image.open("leaf.jpg"))
+    rgba, ok = cut_out_leaf(Image.open("leaf.jpg"), method="hybrid")
     rgb = composite(rgba)          # leaf on black, ready for the classifier
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import random
+import warnings
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -94,15 +106,28 @@ def _fill_holes(mask: np.ndarray) -> np.ndarray:
     return (mask | (flood[1:-1, 1:-1] == 0)).astype(np.uint8)
 
 
-def leaf_mask(img: Image.Image) -> tuple[np.ndarray, bool]:
+def leaf_mask(img: Image.Image, method: str = "grabcut") -> tuple[np.ndarray, bool]:
     """
     Segment the main leaf.
+
+    method: "grabcut" (classical) or "hybrid" (MobileSAM with GrabCut fallback;
+            GrabCut alone if MobileSAM is not installed).
 
     Returns:
         mask: uint8 array (H, W) at the input resolution, 255 = leaf.
         ok:   False if segmentation failed — the mask is then all 255 so
               callers fall back to the full image.
     """
+    if method == "hybrid":
+        result = _sam_mask(img)
+        if result is not None:
+            return result
+    elif method != "grabcut":
+        raise ValueError(f"unknown segmentation method {method!r}")
+    return _grabcut_mask(img)
+
+
+def _grabcut_mask(img: Image.Image) -> tuple[np.ndarray, bool]:
     rgb_full = np.asarray(img.convert("RGB"))
     h0, w0 = rgb_full.shape[:2]
     scale = min(1.0, WORK_SIZE / max(h0, w0))
@@ -174,6 +199,95 @@ def leaf_mask(img: Image.Image) -> tuple[np.ndarray, bool]:
     return mask.clip(0, 255).astype(np.uint8), True
 
 
+# ── MobileSAM (learned) segmenter ─────────────────────────────────────────────
+
+MOBILE_SAM_COMMIT = "f706ad9c4eb7f219c00d9050e46328518ffb65d2"
+MOBILE_SAM_URL = (f"https://raw.githubusercontent.com/ChaoningZhang/MobileSAM/"
+                  f"{MOBILE_SAM_COMMIT}/weights/mobile_sam.pt")
+MOBILE_SAM_SHA256 = "6dbb90523a35330fedd7f1d3dfc66f995213d81b29a5ca8108dbcdd4e37d6c2f"
+SAM_INPUT_SIZE = 512     # photos are downscaled to this longest side before SAM
+SAM_SCORE_SLACK = 0.03   # take the largest of SAM's 3 masks scoring within this of the best
+SAM_FULL_FRAC = 0.90     # a pick this large means the leaf fills the frame — keep the whole image
+
+_sam_predictor = None    # loaded on first use; False once found to be unavailable
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _load_sam():
+    """MobileSAM predictor, or None if the package/weights are unavailable."""
+    global _sam_predictor
+    if _sam_predictor is None:
+        try:
+            import torch
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")      # timm deprecation noise on import
+                from mobile_sam import SamPredictor, sam_model_registry
+            path = Path(torch.hub.get_dir()) / "checkpoints" / "mobile_sam.pt"
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                torch.hub.download_url_to_file(MOBILE_SAM_URL, str(path))
+            if _sha256(path) != MOBILE_SAM_SHA256:   # checkpoints are pickles: never load unverified
+                raise RuntimeError(f"checksum mismatch for {path}")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = sam_model_registry["vit_t"](checkpoint=str(path)).to(device).eval()
+            _sam_predictor = SamPredictor(model)
+        except Exception as e:                       # missing package, offline, bad file
+            warnings.warn(f"MobileSAM unavailable ({e}); falling back to GrabCut segmentation")
+            _sam_predictor = False
+    return _sam_predictor or None
+
+
+def _sam_mask(img: Image.Image) -> tuple[np.ndarray, bool] | None:
+    """Mask of the object at the photo's centre, or None to defer to GrabCut."""
+    predictor = _load_sam()
+    if predictor is None:
+        return None
+    import torch
+
+    rgb_img = img.convert("RGB")
+    w0, h0 = rgb_img.size
+    scale = min(1.0, SAM_INPUT_SIZE / max(w0, h0))
+    small = rgb_img.resize((max(1, round(w0 * scale)), max(1, round(h0 * scale)))) if scale < 1 else rgb_img
+    rgb = np.asarray(small)
+    h, w = rgb.shape[:2]
+    with torch.no_grad():
+        predictor.set_image(rgb)
+        masks, scores, _ = predictor.predict(point_coords=np.array([[w / 2, h / 2]]),
+                                             point_labels=np.array([1]), multimask_output=True)
+    # SAM proposes part / bigger part / whole object: take the biggest it is about as sure of
+    good = [k for k in range(len(scores)) if scores[k] >= scores.max() - SAM_SCORE_SLACK]
+    mask = masks[max(good, key=lambda k: masks[k].sum())].astype(np.uint8)
+
+    n, labels = cv2.connectedComponents(mask)
+    if n > 2 and labels[h // 2, w // 2] > 0:         # drop stray fragments away from the prompt
+        mask = (labels == labels[h // 2, w // 2]).astype(np.uint8)
+    mask = _fill_holes(mask)
+
+    frac = mask.mean()
+    if frac > SAM_FULL_FRAC:
+        return np.full((h0, w0), 255, np.uint8), False
+    if frac < MIN_AREA_FRAC:
+        return None
+    # A pick that is neither plant-coloured nor saturated is soil or background
+    # under the centre point — let GrabCut's colour prior find the plant instead.
+    picked = mask.astype(bool)
+    sat = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)[..., 1][picked].mean() / 255
+    if _plant_prior(rgb)[picked].mean() < 0.25 and sat < 0.2:
+        return None
+
+    mask = cv2.GaussianBlur(mask.astype(np.float32) * 255, (3, 3), 0)   # soft edge
+    if scale < 1:
+        mask = cv2.resize(mask, (w0, h0), interpolation=cv2.INTER_LINEAR)
+    return mask.clip(0, 255).astype(np.uint8), True
+
+
 def apply_mask(img: Image.Image, mask: np.ndarray, margin: float = 0.06) -> Image.Image:
     """
     Attach `mask` as alpha, crop to the leaf's bounding box (+margin) and pad
@@ -197,9 +311,10 @@ def apply_mask(img: Image.Image, mask: np.ndarray, margin: float = 0.06) -> Imag
     return square
 
 
-def cut_out_leaf(img: Image.Image, margin: float = 0.06) -> tuple[Image.Image, bool]:
+def cut_out_leaf(img: Image.Image, margin: float = 0.06,
+                 method: str = "grabcut") -> tuple[Image.Image, bool]:
     """Segment and crop the leaf. Returns (RGBA square cutout, segmentation_ok)."""
-    mask, ok = leaf_mask(img)
+    mask, ok = leaf_mask(img, method)
     return apply_mask(img, mask, margin), ok
 
 

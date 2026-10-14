@@ -237,15 +237,16 @@ def load_model(model_path: str = "results/disease_model.pth"):
     return model, classes, checkpoint.get("preprocess", "resize")
 
 
-def prepare_image(img: Image.Image, preprocess: str = "leaf_cutout"):
+def prepare_image(img: Image.Image, preprocess: str = "leaf_cutout", segmenter: str = "hybrid"):
     """
     Turn a user photo into the model's input tensor, exactly as at validation time.
+    segmenter: "hybrid" (MobileSAM + GrabCut fallback, best on field photos) or "grabcut".
     Returns (tensor of shape (1, 3, H, W), RGB image the model actually sees).
     """
     img = ImageOps.exif_transpose(img).convert("RGB")   # phone photos store rotation in EXIF
     resize = transforms.Resize((IMG_SIZE, IMG_SIZE))
     if preprocess == "leaf_cutout":
-        view = composite(resize(cut_out_leaf(img)[0]), (0, 0, 0))
+        view = composite(resize(cut_out_leaf(img, method=segmenter)[0]), (0, 0, 0))
     else:
         view = resize(img)
     tensor = transforms.Compose([transforms.ToTensor(), transforms.Normalize(MEAN, STD)])(view)
