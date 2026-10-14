@@ -7,8 +7,6 @@ Output: disease diagnosis + environmental risk + estimated revenue loss
 import sys
 import streamlit as st
 import torch
-import torch.nn as nn
-from torchvision import models
 from pathlib import Path
 from PIL import Image, ImageOps
 import numpy as np
@@ -18,7 +16,7 @@ from src.recommendations import RECOMMENDATIONS, SEVERITY_COLOR
 from src.fusion import assess_risk
 from src.multimodal_model import MultimodalCropNet
 from src.weather import geocode, fetch_weather
-from src.disease_classifier import prepare_image
+from src.disease_classifier import arch_of, build_model, prepare_image
 
 DISEASE_MODEL = Path("results/disease_model.pth")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -84,8 +82,7 @@ def load_disease_model():
     if model_type == "multimodal":
         model = MultimodalCropNet(num_classes=len(classes), freeze_backbone=False)
     else:
-        model = models.resnet18(weights=None)
-        model.fc = nn.Linear(model.fc.in_features, len(classes))
+        model = build_model(len(classes), finetune="fc", pretrained=False, arch=arch_of(model_type))
 
     model.load_state_dict(checkpoint["model_state"])
     model.to(DEVICE)
