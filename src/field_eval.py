@@ -27,8 +27,10 @@ import random
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
 import torch
 from PIL import Image
+from sklearn.metrics import precision_recall_fscore_support
 
 from src.disease_classifier import load_model, prepare_image
 
@@ -153,7 +155,12 @@ def build_cropped_plantdoc(detection_dir: str, out_dir: str, classification_dir:
 
 
 def _score(model_path: str, items, preprocess: str | None, segmenter: str) -> dict:
-    """Top-1/top-3 over all classes, plus restricted variants, for (path, class) items."""
+    """
+    Top-1/top-3 over all classes, restricted variants, and macro precision/recall/F1
+    (averaged over the classes present in the test set, so a minority class counts as
+    much as a big one) for (path, class) items. y_true/y_pred are kept for a
+    confusion matrix (see confusion()).
+    """
     model, classes, ckpt_preprocess = load_model(model_path)
     preprocess = preprocess or ckpt_preprocess
     idx = {c: i for i, c in enumerate(classes)}
@@ -165,6 +172,7 @@ def _score(model_path: str, items, preprocess: str | None, segmenter: str) -> di
 
     hits = defaultdict(lambda: [0, 0])          # class → [correct, total]
     top1 = top3 = given_crop = among_plantdoc = n = 0
+    y_true, y_pred = [], []
     with torch.no_grad():
         for path, target in items:
             if target not in idx:
@@ -184,18 +192,41 @@ def _score(model_path: str, items, preprocess: str | None, segmenter: str) -> di
             among_plantdoc += int((probs * plantdoc_mask).argmax() == t)
             hits[target][0] += int(rank[0] == t)
             hits[target][1] += 1
+            y_true.append(t)
+            y_pred.append(int(rank[0]))
             n += 1
 
+    present = sorted(set(y_true))
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        y_true, y_pred, labels=present, average="macro", zero_division=0)
     return {"n": n, "preprocess": preprocess, "top1": top1 / n, "top3": top3 / n,
             "top1_given_crop": given_crop / n, "top1_plantdoc_classes": among_plantdoc / n,
+            "macro_precision": float(precision), "macro_recall": float(recall), "macro_f1": float(f1),
             "per_class": {c: h[0] / h[1] for c, h in sorted(hits.items())},
-            "support": {c: h[1] for c, h in sorted(hits.items())}}
+            "support": {c: h[1] for c, h in sorted(hits.items())},
+            "classes": classes, "y_true": y_true, "y_pred": y_pred}
+
+
+def confusion(r: dict):
+    """
+    Row-normalised confusion matrix over the test set's classes, plus an "other" column
+    for predictions of classes the test set does not contain. Returns (matrix, labels).
+    """
+    present = sorted(set(r["y_true"]))
+    col = {c: i for i, c in enumerate(present)}
+    m = np.zeros((len(present), len(present) + 1))
+    for t, p in zip(r["y_true"], r["y_pred"]):
+        m[col[t], col.get(p, len(present))] += 1
+    m /= m.sum(axis=1, keepdims=True)
+    return m, [r["classes"][c] for c in present] + ["other"]
 
 
 def _report(title: str, r: dict) -> None:
     print(f"{title}: {r['n']} images, preprocess={r['preprocess']}")
     print(f"  top-1 {r['top1']:.3f} | top-3 {r['top3']:.3f} | top-1 among PlantDoc classes "
           f"{r['top1_plantdoc_classes']:.3f} | top-1 given crop {r['top1_given_crop']:.3f}")
+    print(f"  macro precision {r['macro_precision']:.3f} | recall {r['macro_recall']:.3f} | "
+          f"F1 {r['macro_f1']:.3f}")
     for c, acc in sorted(r["per_class"].items(), key=lambda kv: kv[1]):
         print(f"    {acc:.2f}  {c}  (n={r['support'][c]})")
 

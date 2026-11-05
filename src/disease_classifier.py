@@ -130,23 +130,30 @@ def _image_loader(image_root: str, mask_dir: str | None, preprocess: str):
 
 
 def _pv_datasets(data_dir: str, preprocess: str, mask_dir: str | None, backgrounds_dir: str | None,
-                 val_frac: float = 0.2, seed: int = 42):
+                 holdout_frac: float = 0.2, test_frac: float = 0.1, seed: int = 42):
+    """
+    80/10/10 train/val/test split of PlantVillage. val picks the best epoch; test is
+    only used for the final score. Both come out of the same 20% held out by earlier
+    versions of this code (same seed), so checkpoints trained before the test split
+    existed have never seen the test images either.
+    """
     kw = {"loader": _image_loader(data_dir, mask_dir, preprocess)} if preprocess == "leaf_cutout" else {}
-    # Two dataset instances so train and val each keep their own transform
+    # Separate dataset instances so train and val/test each keep their own transform
     # (re-assigning .transform on a shared dataset silently changes both splits).
     train_full = PlantFolder(data_dir, transform=get_transforms(True, preprocess, backgrounds_dir), **kw)
-    val_full   = PlantFolder(data_dir, transform=get_transforms(False, preprocess), **kw)
+    eval_full  = PlantFolder(data_dir, transform=get_transforms(False, preprocess), **kw)
 
-    perm  = torch.randperm(len(train_full), generator=torch.Generator().manual_seed(seed)).tolist()
-    n_val = int(val_frac * len(train_full))
-    return Subset(train_full, perm[n_val:]), Subset(val_full, perm[:n_val]), train_full.classes
+    perm      = torch.randperm(len(train_full), generator=torch.Generator().manual_seed(seed)).tolist()
+    n_holdout = int(holdout_frac * len(train_full))
+    n_test    = int(test_frac * len(train_full))
+    return (Subset(train_full, perm[n_holdout:]), Subset(eval_full, perm[n_test:n_holdout]),
+            Subset(eval_full, perm[:n_test]), train_full.classes)
 
 
 def load_datasets(data_dir: str, preprocess: str = "leaf_cutout", mask_dir: str | None = None,
-                  backgrounds_dir: str | None = None, val_frac: float = 0.2, seed: int = 42,
-                  num_workers: int = 2):
-    train_ds, val_ds, classes = _pv_datasets(data_dir, preprocess, mask_dir, backgrounds_dir,
-                                             val_frac, seed)
+                  backgrounds_dir: str | None = None, seed: int = 42, num_workers: int = 2):
+    train_ds, val_ds, _, classes = _pv_datasets(data_dir, preprocess, mask_dir, backgrounds_dir,
+                                                seed=seed)
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,
                               num_workers=num_workers, pin_memory=DEVICE == "cuda")
     val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False,
@@ -196,7 +203,7 @@ def train(data_dir: str, epochs: int = 10, save_path: str = "results/disease_mod
                 are not forgotten). The best epoch is chosen on field val, not PlantVillage.
     field_mask_dir: precomputed masks for field_dir (python -m src.segmentation).
     """
-    pv_train, pv_val, classes = _pv_datasets(data_dir, preprocess, mask_dir, backgrounds_dir)
+    pv_train, pv_val, pv_test, classes = _pv_datasets(data_dir, preprocess, mask_dir, backgrounds_dir)
     pin = DEVICE == "cuda"
     val_loader = DataLoader(pv_val, batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=pin)
     field_val_loader = None
@@ -270,12 +277,30 @@ def train(data_dir: str, epochs: int = 10, save_path: str = "results/disease_mod
               + (f"  field_val_acc={field_acc:.3f}" if field_val_loader else ""))
 
     model.load_state_dict(best_state)
+    # Final score on the held-out PlantVillage test split — never used to choose an epoch
+    test_loader = DataLoader(pv_test, batch_size=BATCH_SIZE, num_workers=num_workers, pin_memory=pin)
+    history["pv_test_acc"] = evaluate(model, test_loader)
     torch.save({"model_state": best_state, "classes": classes, "model_type": arch,
                 "preprocess": preprocess, "finetune": finetune,
-                "field_finetuned": bool(field_dir)}, save_path)
-    print(f"Best {'field_val_acc' if field_val_loader else 'val_acc'}={best_acc:.3f} "
-          f"— model saved to {save_path}")
+                "field_finetuned": bool(field_dir), "pv_test_acc": history["pv_test_acc"]}, save_path)
+    print(f"Best {'field_val_acc' if field_val_loader else 'val_acc'}={best_acc:.3f}, "
+          f"PlantVillage test accuracy {history['pv_test_acc']:.3f} — model saved to {save_path}")
     return model, classes, history
+
+
+def evaluate_plantvillage_test(model_path: str, data_dir: str, mask_dir: str | None = None,
+                               num_workers: int = 2) -> dict:
+    """
+    Accuracy, macro precision/recall/F1 and per-class scores of a checkpoint on the
+    held-out PlantVillage test split (the same split train() reports on).
+    """
+    model, classes, preprocess = load_model(model_path)
+    *_, test_ds, pv_classes = _pv_datasets(data_dir, preprocess, mask_dir, None)
+    if pv_classes != classes:
+        raise ValueError(f"{model_path} was trained on different classes than {data_dir}")
+    loader = DataLoader(test_ds, batch_size=BATCH_SIZE, num_workers=num_workers,
+                        pin_memory=DEVICE == "cuda")
+    return evaluate(model, loader, classes)
 
 
 def evaluate(model: nn.Module, loader: DataLoader, classes=None):
@@ -308,8 +333,12 @@ def evaluate(model: nn.Module, loader: DataLoader, classes=None):
         labels=list(range(len(classes))),
         zero_division=0,
     )
+    present = support > 0
     return {
         "accuracy": round(accuracy, 4),
+        "macro_precision": round(float(precision[present].mean()), 4),
+        "macro_recall":    round(float(recall[present].mean()), 4),
+        "macro_f1":        round(float(f1[present].mean()), 4),
         "per_class": {
             cls: {
                 "precision": round(float(p), 3),
